@@ -32,9 +32,15 @@
   "devDependencies": {
     "@nestjs/cli": "^11.0.21",
     "@nestjs/schematics": "^11.1.0",
+    "@nestjs/testing": "^11.1.21",
     "@types/node": "^25.8.0",
     "@types/pg": "^8.20.0",
+    "@types/supertest": "^7.2.0",
+    "@vitest/coverage-v8": "^4.1.6",
+    "light-my-request": "^6.6.0",
+    "supertest": "^7.2.2",
     "tsx": "^4.22.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
   }
 }
