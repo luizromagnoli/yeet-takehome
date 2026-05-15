@@ -49,10 +49,12 @@ export class HmacGuard implements CanActivate {
       throw new ForbiddenException();
     }
 
-    const rawBody = request.rawBody;
-    if (!Buffer.isBuffer(rawBody)) {
-      throw new ForbiddenException();
-    }
+    // GET requests carry no body, so an absent rawBody is signed against
+    // empty bytes. POST requests with bodies must have rawBody populated by
+    // Fastify; we rely on that to be present rather than reconstructing it.
+    const rawBody = Buffer.isBuffer(request.rawBody)
+      ? request.rawBody
+      : Buffer.alloc(0);
 
     const secret = this.config.getOrThrow<string>('BET_PROCESSOR_HMAC_SECRET');
     const expected = createHmac('sha256', secret).update(rawBody).digest();

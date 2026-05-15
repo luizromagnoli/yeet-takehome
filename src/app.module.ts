@@ -5,6 +5,7 @@ import { DbModule } from './db/db.module';
 import { HealthModule } from './health/health.module';
 import { PartitionModule } from './partitions/partition.module';
 import { ProcessModule } from './process/process.module';
+import { ReportModule } from './report/report.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ProcessModule } from './process/process.module';
     HealthModule,
     PartitionModule,
     ProcessModule,
+    ReportModule,
   ],
 })
 export class AppModule {}
