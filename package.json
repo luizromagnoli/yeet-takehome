@@ -12,6 +12,7 @@
     "start:dev": "nest start --watch",
     "migrate": "tsx src/db/migrate.ts",
     "ensure-partitions": "tsx src/partitions/cli.ts",
+    "seed": "tsx src/scripts/seed.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
