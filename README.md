@@ -6,27 +6,79 @@ time-bounded RTP reporting.
 
 Built with NestJS + Fastify on Node 24 LTS, PostgreSQL 16, and Kysely.
 
-## Quick start
+## Requirements
+
+- Docker Desktop (or any OCI engine that speaks `docker compose`)
+- Node.js 24 LTS — the project is pinned via `engines` in `package.json` and
+  `.nvmrc`. If you use nvm, `nvm use` picks it up.
+
+Postgres listens on host port `54320` (not 5432, to avoid colliding with a
+local Postgres). The API listens on `:3000`.
+
+## Quick start (run from the repo root)
 
 ```sh
-# 1. Bring up Postgres + the API
-docker compose up --build
+# 1. Pick up Node 24 and install dependencies
+nvm use            # honours .nvmrc → Node 24 LTS
+npm install
 
-# 2. From another shell, run migrations and seed users
-DATABASE_URL=postgres://yeet:yeet@localhost:54320/yeet npm run migrate
-DATABASE_URL=postgres://yeet:yeet@localhost:54320/yeet npm run seed -- --users 1000
+# 2. Start Postgres in the background
+docker compose up -d postgres
 
-# 3. Run the test suite
-npm test
+# Wait for it to become healthy (~5 seconds):
+docker inspect --format '{{.State.Health.Status}}' yeet-postgres-1
+# rerun until it prints "healthy"
 
-# 4. Run the RTP simulator against the API and verify the casino-wide RTP
-DATABASE_URL=postgres://yeet:yeet@localhost:54320/yeet \
-BET_PROCESSOR_HMAC_SECRET=test \
+# 3. Set env vars for the local CLIs (the API container reads them from compose)
+export DATABASE_URL=postgres://yeet:yeet@localhost:54320/yeet
+export BET_PROCESSOR_HMAC_SECRET=test
+
+# 4. Run migrations and seed 1000 users (the acceptance user 8|USDT|USD
+#    is always seeded at balance 74322001)
+npm run migrate
+npm run seed -- --users 1000
+
+# 5. Build and run the test suite
+npm run build
+npm test           # 21 tests across acceptance / concurrency / HMAC / reporting
+
+# 6. Start the API — pick ONE of:
+#    A) locally, for development
+node dist/main.js
+#    B) inside Docker, for a sealed run
+docker compose up --build api
+
+# 7. With the API running on :3000, run the RTP simulator
 npm run game -- --users 200 --rounds 30000 --seed 42 --base-url http://localhost:3000
+# Prints client-side and reported RTP, then PASS/FAIL on ±1% of 0.95.
 ```
 
-Postgres listens on host port `54320` (not 5432, to avoid colliding with
-locally-running databases). The API listens on `:3000`.
+### Manual sanity check
+
+The PDF's example HMAC vector verifies against the seeded acceptance user:
+
+```sh
+BODY='{"user_id": "8|USDT|USD","currency": "USD","game": "acceptance:test"}'
+SIG=$(node -e "console.log(require('crypto').createHmac('sha256','test').update(process.argv[1]).digest('hex'))" "$BODY")
+curl -s -X POST http://localhost:3000/aggregator/takehome/process \
+  -H 'content-type: application/json' \
+  -H "authorization: HMAC-SHA256 $SIG" \
+  -d "$BODY"
+# → {"balance":74322001}
+
+curl -s http://localhost:3000/healthz   # → {"status":"ok"}
+```
+
+### Reset the database
+
+If you want to start clean:
+
+```sh
+docker compose down -v        # drops the postgres_data volume
+docker compose up -d postgres
+npm run migrate
+npm run seed -- --users 1000
+```
 
 ## API
 
