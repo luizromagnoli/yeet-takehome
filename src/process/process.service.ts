@@ -1,7 +1,8 @@
-import { Inject, Injectable, NotImplementedException } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { type Kysely, sql } from 'kysely';
 import { KYSELY } from '../db/pool.provider';
 import type { Database } from '../db/types';
+import { processActions } from '../domain/process-actions';
 import type { ProcessRequestDto } from './dto/process.dto';
 
 export interface BalanceOnlyResponse {
@@ -9,7 +10,7 @@ export interface BalanceOnlyResponse {
 }
 
 export interface ProcessResponse {
-  game_id: string | undefined;
+  game_id: string;
   transactions: Array<{ action_id: string; tx_id: string }>;
   balance: number;
 }
@@ -25,8 +26,15 @@ export class ProcessService {
       return this.lookupBalance(body.user_id);
     }
 
-    // The transactional action-processing algorithm lives in its own commit.
-    throw new NotImplementedException('action processing not yet implemented');
+    const result = await this.db
+      .transaction()
+      .execute((trx) => processActions(trx, body));
+
+    return {
+      game_id: result.game_id,
+      transactions: result.transactions,
+      balance: Number(result.balance),
+    };
   }
 
   private async lookupBalance(userId: string): Promise<BalanceOnlyResponse> {

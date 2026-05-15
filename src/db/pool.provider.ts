@@ -1,6 +1,11 @@
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
 import { Kysely, PostgresDialect } from 'kysely';
 import type { Database } from './types';
+
+// Parse INT8 / BIGINT as native bigint so the application reasons about
+// money in arbitrary-precision integers and never silently loses precision
+// across Number.MAX_SAFE_INTEGER.
+types.setTypeParser(types.builtins.INT8, (value: string) => BigInt(value));
 
 export const KYSELY = Symbol('Kysely');
 
