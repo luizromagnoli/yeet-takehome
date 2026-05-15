@@ -23,6 +23,8 @@ export class DbModule implements OnApplicationShutdown {
   constructor(@Inject(KYSELY) private readonly db: Kysely<Database>) {}
 
   async onApplicationShutdown(): Promise<void> {
+    // Kysely's destroy() closes the pg connection pool — it does not touch
+    // any data. Same idea as pg.Pool.end().
     await this.db.destroy();
   }
 }
