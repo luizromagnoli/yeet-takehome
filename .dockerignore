@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+.git
+.gitignore
+.gitattributes
+.editorconfig
+.env
+.env.*
+*.log
+README.md
+PLAN.md
+test
+scripts
+.vscode
+.idea
