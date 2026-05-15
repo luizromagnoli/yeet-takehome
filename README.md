@@ -176,6 +176,36 @@ records the action as `status='noop'` with a `delta=0`, and removes the
 tombstone. The action still gets a `tx_id` (idempotency on retry stays
 intact) but produces no balance effect.
 
+### Kysely over a heavier ORM
+
+The data layer is Kysely + the `pg` driver, not TypeORM or Prisma. The
+workload pushed me away from an ORM rather than toward one:
+
+- The schema relies on Postgres-specific features that no ORM models
+  declaratively — `PARTITION BY RANGE`, `PARTITION OF`,
+  `HASH (MODULUS 16, REMAINDER n)`, `pg_try_advisory_lock`. With an ORM I'd
+  drop to raw `queryRunner.query()` for all of these and lose the ORM's
+  type-safety benefit anyway.
+- The idempotency hot path is a single
+  `INSERT ... ON CONFLICT DO NOTHING RETURNING tx_id`. Kysely expresses this
+  directly with full type inference on the returned row. TypeORM's query
+  builder is awkward with `RETURNING` outside basic insert/update.
+- Money is `BIGINT` in Postgres, native `bigint` in Node (via a `pg` INT8
+  type parser). Kysely passes this through cleanly; an ORM's own
+  column-type coercion would compete with it.
+- `db.transaction().execute(trx => …)` gives us a single, obvious primitive
+  for the per-user `SELECT … FOR UPDATE` flow. TypeORM's history of
+  transaction APIs (EntityManager vs QueryRunner vs `@Transaction()` vs
+  `typeorm-transactional`) is friction we don't need.
+
+"Robust" can be misleading here — TypeORM is *broader* (entities, eager/lazy
+loading, repository injection, decorator-driven validation), not more
+robust. For a ledger that lives close to SQL, the ORM abstractions don't
+pay off, and the type inference on its query builder is famously weak. The
+trade I'd give up by avoiding TypeORM (`@InjectRepository(User)` ergonomics
+and the familiarity of the Nest tutorial stack) is small compared to what
+Kysely buys for partitioning + idempotency + atomic transactions.
+
 ### Forward-only migrations
 
 Kysely's migrator manages `kysely_migration` and `kysely_migration_lock`
