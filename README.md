@@ -35,22 +35,26 @@ docker inspect --format '{{.State.Health.Status}}' yeet-postgres-1
 export DATABASE_URL=postgres://yeet:yeet@localhost:54320/yeet
 export BET_PROCESSOR_HMAC_SECRET=test
 
-# 4. Run migrations and seed 1000 users (the acceptance user 8|USDT|USD
-#    is always seeded at balance 74322001)
+# 4. Run migrations
 npm run migrate
-npm run seed -- --users 1000
 
 # 5. Build and run the test suite
+#    Note: tests TRUNCATE the DB between cases — that's why seeding
+#    happens *after* this step.
 npm run build
 npm test           # 21 tests across acceptance / concurrency / HMAC / reporting
 
-# 6. Start the API — pick ONE of:
+# 6. Seed 1000 users (the acceptance user 8|USDT|USD is always seeded at
+#    balance 74322001 so the PDF scenarios work against a live API)
+npm run seed -- --users 1000
+
+# 7. Start the API — pick ONE of:
 #    A) locally, for development
 node dist/main.js
 #    B) inside Docker, for a sealed run
 docker compose up --build api
 
-# 7. With the API running on :3000, run the RTP simulator
+# 8. With the API running on :3000, run the RTP simulator
 npm run game -- --users 200 --rounds 30000 --seed 42 --base-url http://localhost:3000
 # Prints client-side and reported RTP, then PASS/FAIL on ±1% of 0.95.
 ```
