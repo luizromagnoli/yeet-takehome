@@ -13,7 +13,9 @@ Built with NestJS + Fastify on Node 24 LTS, PostgreSQL 16, and Kysely.
   `.nvmrc`. If you use nvm, `nvm use` picks it up.
 
 Postgres listens on host port `54320` (not 5432, to avoid colliding with a
-local Postgres). The API listens on `:3000`.
+local Postgres). The API listens on `:3000`. If `:3000` is occupied locally,
+override with `PORT=3001` (and update `--base-url` for the game runner
+accordingly).
 
 ## Quick start (run from the repo root)
 
