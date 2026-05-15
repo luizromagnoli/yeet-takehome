@@ -1,9 +1,10 @@
-import { Inject, Module, OnApplicationShutdown } from '@nestjs/common';
+import { Global, Inject, Module, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Kysely } from 'kysely';
 import { createKysely, createPool, KYSELY } from './pool.provider';
 import type { Database } from './types';
 
+@Global()
 @Module({
   providers: [
     {
