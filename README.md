@@ -198,8 +198,8 @@ global `HmacGuard` reads `req.rawBody`, computes `HMAC_SHA256(secret, rawBody)`,
 parses the provided hex with strict length checks, and compares with
 `crypto.timingSafeEqual`. Any failure path — missing header, wrong scheme,
 wrong length, non-hex characters, mismatched bytes — returns `403`. Health
-endpoints opt out via a `@SkipHmac()` decorator so liveness/readiness probes
-don't need signing.
+endpoints opt out via a `@SkipHmac()` decorator so health checks don't
+need to compute signatures.
 
 ## Partition maintenance
 
@@ -209,9 +209,10 @@ ensure coverage:
 
 1. `ensurePartitions(monthsAhead=3)` runs on every API boot before the HTTP
    listener accepts traffic.
-2. A daily `@Cron('0 3 * * *')` re-runs the same routine. In a multi-pod
-   deployment, the cron body acquires `pg_try_advisory_lock(hashtext('ensure_partitions'))`
-   so only one pod executes the DDL.
+2. A daily `@Cron('0 3 * * *')` re-runs the same routine. When the service
+   is horizontally scaled, the cron body acquires
+   `pg_try_advisory_lock(hashtext('ensure_partitions'))` so only one instance
+   executes the DDL.
 3. A `npm run ensure-partitions` CLI is available for manual remediation.
 
 ## Schema (high level)

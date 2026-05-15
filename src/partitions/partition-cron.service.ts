@@ -15,17 +15,18 @@ export class PartitionCronService {
 
   @Cron('0 3 * * *')
   async runDaily(): Promise<void> {
-    // Single-leader semantics across all API pods: only the pod that wins the
-    // advisory lock executes the DDL. Others observe the false return and
-    // exit. The lock auto-releases on session disconnect, and we also
-    // explicitly unlock in the finally so connection reuse stays correct.
+    // Single-leader semantics across horizontally-scaled instances: only the
+    // instance that wins the advisory lock executes the DDL. Others observe
+    // the false return and exit. The lock auto-releases on session
+    // disconnect, and we also explicitly unlock in the finally so connection
+    // reuse stays correct.
     const lockResult = await sql<{ acquired: boolean }>`
       SELECT pg_try_advisory_lock(hashtext(${LOCK_KEY})) AS acquired
     `.execute(this.db);
     const acquired = lockResult.rows[0]?.acquired === true;
 
     if (!acquired) {
-      this.logger.debug('partition lock not acquired, another pod is running');
+      this.logger.debug('partition lock not acquired, another instance is running');
       return;
     }
 

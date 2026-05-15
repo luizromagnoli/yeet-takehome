@@ -15,13 +15,13 @@ export class HealthController {
 
   @Get('/health')
   @SkipHmac()
-  liveness(): { status: string } {
+  health(): { status: string } {
     return { status: 'ok' };
   }
 
   @Get('/ready')
   @SkipHmac()
-  async readiness(): Promise<{ status: string }> {
+  async ready(): Promise<{ status: string }> {
     try {
       await sql`SELECT 1`.execute(this.db);
       return { status: 'ok' };
