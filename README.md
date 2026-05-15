@@ -12,10 +12,9 @@ Built with NestJS + Fastify on Node 24 LTS, PostgreSQL 16, and Kysely.
 - Node.js 24 LTS — the project is pinned via `engines` in `package.json` and
   `.nvmrc`. If you use nvm, `nvm use` picks it up.
 
-Postgres listens on host port `54320` (not 5432, to avoid colliding with a
-local Postgres). The API listens on `:3000`. If `:3000` is occupied locally,
-override with `PORT=3001` (and update `--base-url` for the game runner
-accordingly).
+Postgres listens on host port `5432` and the API on `:3000`. If either is
+occupied locally, override the host mapping in `docker-compose.yml` (or set
+`PORT=...` for the API) and update `--base-url` for the game runner.
 
 ## Quick start (run from the repo root)
 
@@ -32,7 +31,7 @@ docker inspect --format '{{.State.Health.Status}}' yeet-postgres-1
 # rerun until it prints "healthy"
 
 # 3. Set env vars for the local CLIs (the API container reads them from compose)
-export DATABASE_URL=postgres://yeet:yeet@localhost:54320/yeet
+export DATABASE_URL=postgres://yeet:yeet@localhost:5432/yeet
 export BET_PROCESSOR_HMAC_SECRET=test
 
 # 4. Run migrations
@@ -51,12 +50,28 @@ npm run seed -- --users 1000
 # 7. Start the API — pick ONE of:
 #    A) locally, for development
 node dist/main.js
-#    B) inside Docker, for a sealed run
-docker compose up --build api
+#    B) inside Docker, fully containerised (api + postgres come up together;
+#       the api container has MIGRATE_ON_BOOT=true so migrations run before
+#       it accepts traffic)
+docker compose up --build
 
 # 8. With the API running on :3000, run the RTP simulator
 npm run game -- --users 200 --rounds 30000 --seed 42 --base-url http://localhost:3000
 # Prints client-side and reported RTP, then PASS/FAIL on ±1% of 0.95.
+```
+
+If you choose path 7B (full Docker), steps 4–6 can be done either before
+starting compose or after — migrations are idempotent and the seed script
+just upserts. The reviewer-friendly one-shot path is:
+
+```sh
+docker compose up --build -d                                   # postgres + api, auto-migrated
+DATABASE_URL=postgres://yeet:yeet@localhost:5432/yeet \
+  npm run seed -- --users 1000                                 # seed
+npm test                                                       # tests (they truncate state)
+DATABASE_URL=postgres://yeet:yeet@localhost:5432/yeet \
+  npm run seed -- --users 1000                                 # re-seed after the truncate
+npm run game -- --users 200 --rounds 30000 --seed 42 --base-url http://localhost:3000
 ```
 
 ### Manual sanity check

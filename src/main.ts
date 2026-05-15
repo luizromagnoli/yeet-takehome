@@ -8,6 +8,7 @@ import type { Kysely } from 'kysely';
 import { AppModule } from './app.module';
 import { KYSELY } from './db/pool.provider';
 import type { Database } from './db/types';
+import { migrateToLatest } from './db/migrator';
 import { ensurePartitions } from './partitions/ensure-partitions';
 
 async function bootstrap(): Promise<void> {
@@ -29,6 +30,19 @@ async function bootstrap(): Promise<void> {
 
   const logger = new Logger('Bootstrap');
   const db = app.get<Kysely<Database>>(KYSELY);
+
+  if (process.env.MIGRATE_ON_BOOT === 'true') {
+    const { results, error } = await migrateToLatest(db);
+    for (const r of results) {
+      if (r.status === 'Success') {
+        logger.log(`migration applied: ${r.migrationName}`);
+      }
+    }
+    if (error) {
+      throw error;
+    }
+  }
+
   const monthsAhead = Number(process.env.PARTITIONS_MONTHS_AHEAD ?? 3);
   const partitions = await ensurePartitions(db, { monthsAhead });
   logger.log(`partition coverage verified (${partitions.length} partitions)`);

@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: yeet
       POSTGRES_DB: yeet
     ports:
-      - "54320:5432"
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,6 +24,7 @@ services:
       BET_PROCESSOR_HMAC_SECRET: test
       PORT: "3000"
       NODE_ENV: production
+      MIGRATE_ON_BOOT: "true"
     ports:
       - "3000:3000"
     depends_on:
