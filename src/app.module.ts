@@ -4,6 +4,7 @@ import { ConfigModule } from './config/config.module';
 import { DbModule } from './db/db.module';
 import { HealthModule } from './health/health.module';
 import { PartitionModule } from './partitions/partition.module';
+import { ProcessModule } from './process/process.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { PartitionModule } from './partitions/partition.module';
     AuthModule,
     HealthModule,
     PartitionModule,
+    ProcessModule,
   ],
 })
 export class AppModule {}
