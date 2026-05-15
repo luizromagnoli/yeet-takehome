@@ -13,13 +13,13 @@ import type { Database } from '../db/types';
 export class HealthController {
   constructor(@Inject(KYSELY) private readonly db: Kysely<Database>) {}
 
-  @Get('/healthz')
+  @Get('/health')
   @SkipHmac()
   liveness(): { status: string } {
     return { status: 'ok' };
   }
 
-  @Get('/readyz')
+  @Get('/ready')
   @SkipHmac()
   async readiness(): Promise<{ status: string }> {
     try {

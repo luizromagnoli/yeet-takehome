@@ -87,7 +87,7 @@ curl -s -X POST http://localhost:3000/aggregator/takehome/process \
   -d "$BODY"
 # → {"balance":74322001}
 
-curl -s http://localhost:3000/healthz   # → {"status":"ok"}
+curl -s http://localhost:3000/health    # → {"status":"ok"}
 ```
 
 ### Reset the database
