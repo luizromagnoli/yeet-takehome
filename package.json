@@ -13,6 +13,7 @@
     "migrate": "tsx src/db/migrate.ts",
     "ensure-partitions": "tsx src/partitions/cli.ts",
     "seed": "tsx src/scripts/seed.ts",
+    "game": "tsx src/scripts/game-runner.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
