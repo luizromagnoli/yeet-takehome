@@ -10,13 +10,17 @@
     "build": "nest build",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
+    "migrate": "tsx src/db/migrate.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.21",
+    "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.1.21",
     "@nestjs/platform-fastify": "^11.1.21",
+    "kysely": "^0.29.0",
+    "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
   },
@@ -24,6 +28,8 @@
     "@nestjs/cli": "^11.0.21",
     "@nestjs/schematics": "^11.1.0",
     "@types/node": "^25.8.0",
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.22.0",
     "typescript": "^6.0.3"
   }
 }
