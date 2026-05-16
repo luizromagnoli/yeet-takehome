@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Transaction } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import type { Database } from '../../db/types';
 import type { RequestContext } from '../action-context';
 import { CurrencyMismatchError } from '../errors';
@@ -52,6 +52,23 @@ export class BalanceRepository {
       .forUpdate()
       .executeTakeFirstOrThrow();
     return new Money(row.balance, row.currency);
+  }
+
+  /**
+   * Non-locking balance read used by the balance-lookup endpoint. Accepts
+   * any `Kysely<Database>` (root or transaction), so this is also safe to
+   * call from a transactional flow if ever needed.
+   */
+  async read(
+    db: Kysely<Database>,
+    userId: UserId,
+  ): Promise<Money | null> {
+    const row = await db
+      .selectFrom('user_balances')
+      .where('user_id', '=', userId)
+      .select(['balance', 'currency'])
+      .executeTakeFirst();
+    return row ? new Money(row.balance, row.currency) : null;
   }
 
   async update(

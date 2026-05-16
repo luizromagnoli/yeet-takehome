@@ -1,8 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { type Kysely, sql } from 'kysely';
+import { type Kysely } from 'kysely';
 import { KYSELY } from '../db/pool.provider';
 import type { Database } from '../db/types';
 import { ActionProcessor } from '../domain/action-processor';
+import { BalanceRepository } from '../domain/repositories/balance.repository';
+import { asUserId } from '../domain/values/ids';
 import type { ProcessRequestDto } from './dto/process.dto';
 
 export interface ProcessResponse {
@@ -16,6 +18,7 @@ export class ProcessService {
   constructor(
     @Inject(KYSELY) private readonly db: Kysely<Database>,
     private readonly processor: ActionProcessor,
+    private readonly balances: BalanceRepository,
   ) {}
 
   async process(body: ProcessRequestDto): Promise<ProcessResponse> {
@@ -38,13 +41,7 @@ export class ProcessService {
   }
 
   private async lookupBalance(userId: string): Promise<ProcessResponse> {
-    const result = await sql<{ balance: string }>`
-      SELECT balance::text AS balance
-      FROM user_balances
-      WHERE user_id = ${userId}
-    `.execute(this.db);
-
-    const balance = Number(result.rows[0]?.balance ?? '0');
-    return { balance };
+    const balance = await this.balances.read(this.db, asUserId(userId));
+    return { balance: balance?.toNumber() ?? 0 };
   }
 }

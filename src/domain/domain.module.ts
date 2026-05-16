@@ -23,6 +23,6 @@ import { PendingRollbackRepository } from './repositories/pending-rollback.repos
     HandlerRegistry,
     ActionProcessor,
   ],
-  exports: [ActionProcessor],
+  exports: [ActionProcessor, BalanceRepository, DailyStatsRepository],
 })
 export class DomainModule {}

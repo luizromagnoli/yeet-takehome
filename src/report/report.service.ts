@@ -1,7 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { type Kysely, sql } from 'kysely';
+import { type Kysely } from 'kysely';
 import { KYSELY } from '../db/pool.provider';
 import type { Database } from '../db/types';
+import {
+  type CurrencyStatsRow,
+  DailyStatsRepository,
+  type UserStatsRow,
+} from '../domain/repositories/daily-stats.repository';
 
 const DEFAULT_LIMIT = 100;
 
@@ -42,7 +47,10 @@ interface DateRange {
 
 @Injectable()
 export class ReportService {
-  constructor(@Inject(KYSELY) private readonly db: Kysely<Database>) {}
+  constructor(
+    @Inject(KYSELY) private readonly db: Kysely<Database>,
+    private readonly dailyStats: DailyStatsRepository,
+  ) {}
 
   async userReport(
     fromIso: string,
@@ -53,97 +61,58 @@ export class ReportService {
     const range = toDayRange(fromIso, toIso);
     const effectiveLimit = limit ?? DEFAULT_LIMIT;
 
-    const result = await sql<{
-      user_id: string;
-      currency: string;
-      rounds: number;
-      total_bet: string;
-      total_win: string;
-      rolled_back_bet: string;
-      rolled_back_win: string;
-    }>`
-      SELECT
-        user_id,
-        currency,
-        COALESCE(SUM(rounds), 0)::int             AS rounds,
-        COALESCE(SUM(bets), 0)::bigint            AS total_bet,
-        COALESCE(SUM(wins), 0)::bigint            AS total_win,
-        COALESCE(SUM(rolled_back_bets), 0)::bigint AS rolled_back_bet,
-        COALESCE(SUM(rolled_back_wins), 0)::bigint AS rolled_back_win
-      FROM user_daily_stats
-      WHERE day >= ${range.fromDate}::date
-        AND day <  ${range.toDate}::date
-        AND user_id > ${cursor ?? ''}
-      GROUP BY user_id, currency
-      ORDER BY user_id
-      LIMIT ${effectiveLimit + 1}
-    `.execute(this.db);
+    const rawRows = await this.dailyStats.sumByUser(
+      this.db,
+      range.fromDate,
+      range.toDate,
+      cursor ?? '',
+      effectiveLimit + 1,
+    );
 
-    const rows = result.rows.map(toUserReportRow);
-    const hasMore = rows.length > effectiveLimit;
-    const page = hasMore ? rows.slice(0, effectiveLimit) : rows;
-    const nextCursor = hasMore ? page[page.length - 1].user_id : null;
-    return { users: page, next_cursor: nextCursor };
+    const hasMore = rawRows.length > effectiveLimit;
+    const visible = hasMore ? rawRows.slice(0, effectiveLimit) : rawRows;
+    const users = visible.map(toUserReportRow);
+    const next_cursor = hasMore ? visible[visible.length - 1].user_id : null;
+    return { users, next_cursor };
   }
 
   async casinoReport(fromIso: string, toIso: string): Promise<CasinoReport> {
     const range = toDayRange(fromIso, toIso);
-
-    const result = await sql<{
-      currency: string;
-      rounds: number;
-      total_bet: string;
-      total_win: string;
-      rolled_back_bet: string;
-      rolled_back_win: string;
-    }>`
-      SELECT
-        currency,
-        COALESCE(SUM(rounds), 0)::int             AS rounds,
-        COALESCE(SUM(bets), 0)::bigint            AS total_bet,
-        COALESCE(SUM(wins), 0)::bigint            AS total_win,
-        COALESCE(SUM(rolled_back_bets), 0)::bigint AS rolled_back_bet,
-        COALESCE(SUM(rolled_back_wins), 0)::bigint AS rolled_back_win
-      FROM user_daily_stats
-      WHERE day >= ${range.fromDate}::date
-        AND day <  ${range.toDate}::date
-      GROUP BY currency
-      ORDER BY currency
-    `.execute(this.db);
-
-    const currencies = result.rows.map((r) => ({
-      currency: r.currency,
-      rounds: r.rounds,
-      total_bet: Number(r.total_bet),
-      total_win: Number(r.total_win),
-      rolled_back_bet: Number(r.rolled_back_bet),
-      rolled_back_win: Number(r.rolled_back_win),
-      rtp: computeRtp(Number(r.total_bet), Number(r.total_win)),
-    }));
-    return { currencies };
+    const rawRows = await this.dailyStats.sumByCurrency(
+      this.db,
+      range.fromDate,
+      range.toDate,
+    );
+    return { currencies: rawRows.map(toCasinoReportRow) };
   }
 }
 
-function toUserReportRow(r: {
-  user_id: string;
-  currency: string;
-  rounds: number;
-  total_bet: string;
-  total_win: string;
-  rolled_back_bet: string;
-  rolled_back_win: string;
-}): UserReportRow {
-  const totalBet = Number(r.total_bet);
-  const totalWin = Number(r.total_win);
+function toUserReportRow(r: UserStatsRow): UserReportRow {
+  const total_bet = Number(r.total_bet);
+  const total_win = Number(r.total_win);
   return {
     user_id: r.user_id,
     currency: r.currency,
     rounds: r.rounds,
-    total_bet: totalBet,
-    total_win: totalWin,
+    total_bet,
+    total_win,
     rolled_back_bet: Number(r.rolled_back_bet),
     rolled_back_win: Number(r.rolled_back_win),
-    rtp: computeRtp(totalBet, totalWin),
+    rtp: computeRtp(total_bet, total_win),
+  };
+}
+
+function toCasinoReportRow(r: CurrencyStatsRow): CasinoReportRow {
+  const total_bet = Number(r.total_bet);
+  const total_win = Number(r.total_win);
+  return {
+    currency: r.currency,
+    rounds: r.rounds,
+    total_bet,
+    total_win,
+    rolled_back_bet: Number(r.rolled_back_bet),
+    rolled_back_win: Number(r.rolled_back_win),
+    rtp: computeRtp(total_bet, total_win),
   };
 }
 
