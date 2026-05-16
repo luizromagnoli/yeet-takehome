@@ -86,9 +86,16 @@ describe('Scenario C — single bet finished', () => {
       ],
     });
     expect(res.statusCode).toBe(200);
-    const body = res.json() as { balance: number; transactions: unknown[] };
-    expect(body.balance).toBe(Number(INITIAL_BALANCE) - 100);
-    expect(body.transactions).toHaveLength(1);
+    expect(res.json()).toMatchObject({
+      game_id: 'game-C',
+      transactions: [
+        {
+          action_id: '3b42f070-dab5-4d6c-8bc6-7241b68f00bd',
+          tx_id: expect.any(String),
+        },
+      ],
+      balance: Number(INITIAL_BALANCE) - 100,
+    });
   });
 });
 
