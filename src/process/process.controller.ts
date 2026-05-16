@@ -16,12 +16,15 @@ export class ProcessController {
       `request received [user_id=${body.user_id} currency=${body.currency}` +
         ` game_id=${body.game_id ?? '-'} actions=${actionCount}]`,
     );
+
     const result = await this.service.process(body);
+
     const balance = (result as { balance: number }).balance;
     this.logger.debug(
       `request processed successfully [user_id=${body.user_id}` +
         ` balance=${balance}]`,
     );
+
     return result;
   }
 }
