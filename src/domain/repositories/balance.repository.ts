@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Transaction } from 'kysely';
 import type { Database } from '../../db/types';
 import type { RequestContext } from '../action-context';
+import { CurrencyMismatchError } from '../errors';
 import type { UserId } from '../values/ids';
 import { Money } from '../values/money';
 
@@ -26,6 +27,18 @@ export class BalanceRepository {
       })
       .onConflict((oc) => oc.column('user_id').doNothing())
       .execute();
+
+    // Enforce the "a user has exactly one currency" invariant. Without this,
+    // a second request with a mismatching currency would silently be a no-op
+    // on the upsert and then start writing actions under the wrong currency.
+    const stored = await trx
+      .selectFrom('users')
+      .where('id', '=', ctx.userId)
+      .select('currency')
+      .executeTakeFirstOrThrow();
+    if (stored.currency !== ctx.currency) {
+      throw new CurrencyMismatchError(ctx.currency, stored.currency);
+    }
   }
 
   async lockBalance(

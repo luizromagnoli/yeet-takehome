@@ -13,8 +13,14 @@ interface CliArgs {
   tolerance: number;
 }
 
+interface SimUser {
+  id: UserId;
+  currency: string;
+}
+
 const EXPECTED_RTP = 0.95;
 const WIN_MULTIPLIER_CAP = 1.9; // Uniform(0, 1.9) gives mean=0.95 with manageable variance.
+const CURRENCIES = ['USD', 'EUR', 'GBP'] as const;
 
 async function main(): Promise<void> {
   loadEnv();
@@ -27,19 +33,21 @@ async function main(): Promise<void> {
   }
 
   const args = parseArgs(process.argv.slice(2));
-  const userIds = await ensureUsers(databaseUrl, args);
+  const users = await ensureUsers(databaseUrl, args);
 
   const start = new Date();
   console.log(
-    `starting ${args.rounds} rounds over ${userIds.length} users ` +
+    `starting ${args.rounds} rounds over ${users.length} users ` +
+      `across ${CURRENCIES.length} currencies ` +
       `(concurrency=${args.concurrency}, seed=${args.seed})`,
   );
 
   let nextIdx = 0;
   let completed = 0;
-  let appliedBet = 0n;
-  let appliedWin = 0n;
   let failures = 0;
+  const perCurrency = new Map<string, { bet: bigint; win: bigint }>(
+    CURRENCIES.map((c) => [c, { bet: 0n, win: 0n }]),
+  );
 
   async function worker(): Promise<void> {
     while (true) {
@@ -48,14 +56,17 @@ async function main(): Promise<void> {
         return;
       }
       const rng = seededPrng(args.seed, i);
-      const userId = userIds[Math.floor(rng() * userIds.length)];
+      const user = users[Math.floor(rng() * users.length)];
       const bet = Math.floor(rng() * 9900) + 100;
       const win = drawWin(rng, bet);
 
-      const outcome = await postRound(args.baseUrl, secret, userId, bet, win);
+      const outcome = await postRound(args.baseUrl, secret, user, bet, win);
       if (outcome.ok) {
-        appliedBet += BigInt(bet);
-        appliedWin += BigInt(win);
+        const tally = perCurrency.get(user.currency);
+        if (tally) {
+          tally.bet += BigInt(bet);
+          tally.win += BigInt(win);
+        }
       } else {
         failures++;
       }
@@ -79,40 +90,56 @@ async function main(): Promise<void> {
     `completed in ${elapsedSec.toFixed(1)}s (${(completed / elapsedSec).toFixed(0)} rounds/s, failures=${failures})`,
   );
 
-  const observedRtp =
-    appliedBet === 0n ? 0 : Number(appliedWin) / Number(appliedBet);
-  console.log(
-    `  client-side: bet=${appliedBet} win=${appliedWin} rtp=${observedRtp.toFixed(4)}`,
-  );
+  for (const [currency, tally] of perCurrency) {
+    const clientRtp =
+      tally.bet === 0n ? 0 : Number(tally.win) / Number(tally.bet);
+    console.log(
+      `  ${currency}: bet=${tally.bet} win=${tally.win} rtp=${clientRtp.toFixed(4)}`,
+    );
+  }
 
-  const reportRtp = await fetchCasinoRtp(args.baseUrl, secret, start, end);
-  console.log(`  reported   : rtp=${reportRtp.toFixed(4)}`);
+  const reportedRtps = await fetchCasinoRtps(args.baseUrl, secret, start, end);
 
-  const drift = Math.abs(reportRtp - EXPECTED_RTP);
-  if (drift > args.tolerance) {
+  let allPass = true;
+  for (const currency of CURRENCIES) {
+    const reported = reportedRtps.get(currency) ?? 0;
+    const drift = Math.abs(reported - EXPECTED_RTP);
+    const status =
+      drift > args.tolerance ? 'FAIL' : 'PASS';
+    if (status === 'FAIL') allPass = false;
+    console.log(
+      `  ${currency} reported rtp=${reported.toFixed(4)} (drift ${drift.toFixed(4)}) — ${status}`,
+    );
+  }
+
+  if (!allPass) {
     console.error(
-      `FAIL: |${reportRtp.toFixed(4)} - ${EXPECTED_RTP}| = ${drift.toFixed(4)} > ${args.tolerance}`,
+      `FAIL: at least one currency drifted more than +/- ${args.tolerance} from ${EXPECTED_RTP}`,
     );
     process.exit(1);
   }
   console.log(
-    `PASS: RTP ${reportRtp.toFixed(4)} within +/- ${args.tolerance} of ${EXPECTED_RTP}`,
+    `PASS: every currency within +/- ${args.tolerance} of ${EXPECTED_RTP}`,
   );
 }
 
 async function ensureUsers(
   databaseUrl: string,
   args: CliArgs,
-): Promise<string[]> {
+): Promise<SimUser[]> {
   const pool = createPool({ databaseUrl });
   const db = createKysely(pool);
   const prng = seededPrng(args.seed, -1);
 
-  const users: Array<{ id: UserId; balance: bigint }> = [];
+  const users: Array<SimUser & { balance: bigint }> = [];
   for (let i = 0; i < args.users; i++) {
+    const currency = CURRENCIES[i % CURRENCIES.length];
     const balance = Math.floor(prng() * args.initialBalance) + 10_000;
     users.push({
-      id: asUserId(`sim-${i.toString().padStart(6, '0')}`),
+      id: asUserId(
+        `sim-${currency.toLowerCase()}-${i.toString().padStart(6, '0')}`,
+      ),
+      currency,
       balance: BigInt(balance),
     });
   }
@@ -123,7 +150,7 @@ async function ensureUsers(
       const chunk = users.slice(i, i + CHUNK);
       await trx
         .insertInto('users')
-        .values(chunk.map((u) => ({ id: u.id, currency: 'USD' })))
+        .values(chunk.map((u) => ({ id: u.id, currency: u.currency })))
         .onConflict((oc) => oc.column('id').doNothing())
         .execute();
       await trx
@@ -131,7 +158,7 @@ async function ensureUsers(
         .values(
           chunk.map((u) => ({
             user_id: u.id,
-            currency: 'USD',
+            currency: u.currency,
             balance: u.balance,
           })),
         )
@@ -145,13 +172,13 @@ async function ensureUsers(
   });
 
   await db.destroy();
-  return users.map((u) => u.id);
+  return users.map(({ id, currency }) => ({ id, currency }));
 }
 
 async function postRound(
   baseUrl: string,
   secret: string,
-  userId: string,
+  user: SimUser,
   bet: number,
   win: number,
 ): Promise<{ ok: boolean }> {
@@ -162,8 +189,8 @@ async function postRound(
     actions.push({ action: 'win', action_id: randomUUID(), amount: win });
   }
   const body = JSON.stringify({
-    user_id: userId,
-    currency: 'USD',
+    user_id: user.id,
+    currency: user.currency,
     game: 'simulator:default',
     game_id: randomUUID(),
     finished: true,
@@ -181,12 +208,12 @@ async function postRound(
   return { ok: res.ok };
 }
 
-async function fetchCasinoRtp(
+async function fetchCasinoRtps(
   baseUrl: string,
   secret: string,
   from: Date,
   to: Date,
-): Promise<number> {
+): Promise<Map<string, number>> {
   const url = `${baseUrl}/aggregator/takehome/report/casino?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;
   const sig = createHmac('sha256', secret).update('').digest('hex');
   const res = await fetch(url, {
@@ -198,8 +225,7 @@ async function fetchCasinoRtp(
   const json = (await res.json()) as {
     currencies: Array<{ currency: string; rtp: number | null }>;
   };
-  const usd = json.currencies.find((c) => c.currency === 'USD');
-  return usd?.rtp ?? 0;
+  return new Map(json.currencies.map((c) => [c.currency, c.rtp ?? 0]));
 }
 
 function drawWin(rng: () => number, bet: number): number {

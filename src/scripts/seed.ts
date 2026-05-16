@@ -12,6 +12,8 @@ const ACCEPTANCE_USER_ID = '8|USDT|USD';
 const ACCEPTANCE_USER_BALANCE = 74_322_001;
 const ACCEPTANCE_USER_CURRENCY = 'USD';
 
+const CURRENCIES = ['USD', 'EUR', 'GBP'] as const;
+
 async function main(): Promise<void> {
   loadEnv();
 
@@ -35,10 +37,13 @@ async function main(): Promise<void> {
   ];
 
   for (let i = 0; i < args.users; i++) {
+    const currency = CURRENCIES[i % CURRENCIES.length];
     const balance = Math.floor(prng() * args.balance) + 10_000;
     users.push({
-      id: asUserId(`user-${i.toString().padStart(6, '0')}`),
-      currency: 'USD',
+      id: asUserId(
+        `user-${currency.toLowerCase()}-${i.toString().padStart(6, '0')}`,
+      ),
+      currency,
       balance: BigInt(balance),
     });
   }
@@ -70,7 +75,16 @@ async function main(): Promise<void> {
     }
   });
 
-  console.log(`seeded ${users.length} users (acceptance + ${args.users} generated, seed=${args.seed})`);
+  const byCurrency = users.reduce<Record<string, number>>((acc, u) => {
+    acc[u.currency] = (acc[u.currency] ?? 0) + 1;
+    return acc;
+  }, {});
+  const breakdown = Object.entries(byCurrency)
+    .map(([c, n]) => `${c}=${n}`)
+    .join(', ');
+  console.log(
+    `seeded ${users.length} users (${breakdown}; acceptance + ${args.users} generated, seed=${args.seed})`,
+  );
   await db.destroy();
 }
 

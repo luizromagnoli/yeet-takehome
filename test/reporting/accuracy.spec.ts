@@ -149,6 +149,92 @@ describe('RTP reporting', () => {
     expect(a?.rolled_back_bet).toBe(500);
   });
 
+  it('groups the casino report by currency', async () => {
+    const USER_EUR = 'report-user-EUR';
+    const USER_GBP = 'report-user-GBP';
+    await seedUser(db, USER_EUR, 'EUR', 1_000_000n);
+    await seedUser(db, USER_GBP, 'GBP', 1_000_000n);
+
+    await call({
+      user_id: USER_A,
+      currency: CURRENCY,
+      game: 'r:test',
+      game_id: 'mc-usd',
+      finished: true,
+      actions: [
+        { action: 'bet', action_id: randomUUID(), amount: 1000 },
+        { action: 'win', action_id: randomUUID(), amount: 950 },
+      ],
+    });
+    await call({
+      user_id: USER_EUR,
+      currency: 'EUR',
+      game: 'r:test',
+      game_id: 'mc-eur',
+      finished: true,
+      actions: [
+        { action: 'bet', action_id: randomUUID(), amount: 2000 },
+        { action: 'win', action_id: randomUUID(), amount: 1900 },
+      ],
+    });
+    await call({
+      user_id: USER_GBP,
+      currency: 'GBP',
+      game: 'r:test',
+      game_id: 'mc-gbp',
+      finished: true,
+      actions: [
+        { action: 'bet', action_id: randomUUID(), amount: 3000 },
+        { action: 'win', action_id: randomUUID(), amount: 2700 },
+      ],
+    });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const casinoReport = (await getReport(
+      `/aggregator/takehome/report/casino?from=${today}T00:00:00Z&to=${today}T23:59:59Z`,
+    )) as {
+      currencies: Array<{
+        currency: string;
+        total_bet: number;
+        total_win: number;
+        rtp: number | null;
+      }>;
+    };
+    const byCurrency = new Map(
+      casinoReport.currencies.map((c) => [c.currency, c]),
+    );
+    expect(byCurrency.get('USD')?.total_bet).toBe(1000);
+    expect(byCurrency.get('USD')?.total_win).toBe(950);
+    expect(byCurrency.get('EUR')?.total_bet).toBe(2000);
+    expect(byCurrency.get('EUR')?.total_win).toBe(1900);
+    expect(byCurrency.get('GBP')?.total_bet).toBe(3000);
+    expect(byCurrency.get('GBP')?.total_win).toBe(2700);
+  });
+
+  it('rejects an action whose currency does not match the stored user currency', async () => {
+    const payload = JSON.stringify({
+      user_id: USER_A,
+      currency: 'EUR', // USER_A is registered as USD
+      game: 'r:test',
+      game_id: 'mismatch',
+      finished: true,
+      actions: [
+        { action: 'bet', action_id: randomUUID(), amount: 100 },
+      ],
+    });
+    const res = await app.getHttpAdapter().getInstance().inject({
+      method: 'POST',
+      url: '/aggregator/takehome/process',
+      headers: {
+        'content-type': 'application/json',
+        authorization: authHeader(payload),
+      },
+      payload,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ code: 101 });
+  });
+
   it('paginates per-user with stable keyset cursoring', async () => {
     // Create 3 distinct users, each with a small bet, so the report has rows
     // we can iterate via cursor.
