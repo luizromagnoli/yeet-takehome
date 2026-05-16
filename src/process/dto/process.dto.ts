@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Expose, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
@@ -18,22 +18,25 @@ export class ActionDto {
   @IsIn(['bet', 'win', 'rollback'])
   action!: ActionKind;
 
+  @Expose({ name: 'action_id' })
   @IsUUID()
-  action_id!: string;
+  actionId!: string;
 
   @IsOptional()
   @IsInt()
   @Min(0)
   amount?: number;
 
+  @Expose({ name: 'original_action_id' })
   @IsOptional()
   @IsUUID()
-  original_action_id?: string;
+  originalActionId?: string;
 }
 
 export class ProcessRequestDto {
+  @Expose({ name: 'user_id' })
   @IsString()
-  user_id!: string;
+  userId!: string;
 
   @IsString()
   currency!: string;
@@ -42,9 +45,10 @@ export class ProcessRequestDto {
   @IsString()
   game?: string;
 
+  @Expose({ name: 'game_id' })
   @IsOptional()
   @IsString()
-  game_id?: string;
+  gameId?: string;
 
   @IsOptional()
   @IsBoolean()

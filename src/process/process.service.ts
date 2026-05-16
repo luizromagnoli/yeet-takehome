@@ -23,7 +23,7 @@ export class ProcessService {
 
   async process(body: ProcessRequestDto): Promise<ProcessResponse> {
     if (!body.actions || body.actions.length === 0) {
-      return this.lookupBalance(body.user_id);
+      return this.lookupBalance(body.userId);
     }
 
     const result = await this.db

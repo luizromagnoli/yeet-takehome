@@ -12,14 +12,14 @@ export class ProcessController {
   @HttpCode(200)
   async process(@Body() body: ProcessRequestDto): Promise<ProcessResponse> {
     this.logger.debug(
-      `request received [user_id=${body.user_id} currency=${body.currency}` +
-        ` game_id=${body.game_id ?? '-'} actions=${body.actions?.length ?? 0}]`,
+      `request received [userId=${body.userId} currency=${body.currency}` +
+        ` gameId=${body.gameId ?? '-'} actions=${body.actions?.length ?? 0}]`,
     );
 
     const result = await this.service.process(body);
 
     this.logger.debug(
-      `request processed successfully [user_id=${body.user_id}` +
+      `request processed successfully [userId=${body.userId}` +
         ` balance=${result.balance}]`,
     );
 

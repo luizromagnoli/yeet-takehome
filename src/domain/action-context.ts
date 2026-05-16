@@ -11,10 +11,10 @@ export interface RequestContext {
 
 export function buildContext(request: ProcessRequestDto): RequestContext {
   return {
-    userId: asUserId(request.user_id),
+    userId: asUserId(request.userId),
     currency: request.currency,
     game: request.game ?? '',
-    gameId: asGameId(request.game_id ?? ''),
+    gameId: asGameId(request.gameId ?? ''),
     finished: request.finished === true,
   };
 }

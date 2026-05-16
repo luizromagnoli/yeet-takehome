@@ -29,7 +29,7 @@ export interface RollbackAction {
 }
 
 export function toDomainAction(dto: ActionDto, currency: string): DomainAction {
-  const actionId = asActionId(dto.action_id);
+  const actionId = asActionId(dto.actionId);
   if (dto.action === 'bet' || dto.action === 'win') {
     if (dto.amount === undefined) {
       throw new Error(`${dto.action} action requires an amount`);
@@ -40,12 +40,12 @@ export function toDomainAction(dto: ActionDto, currency: string): DomainAction {
       amount: Money.of(dto.amount, currency),
     };
   }
-  if (!dto.original_action_id) {
+  if (!dto.originalActionId) {
     throw new Error('rollback action requires original_action_id');
   }
   return {
     kind: 'rollback',
     actionId,
-    originalActionId: asActionId(dto.original_action_id),
+    originalActionId: asActionId(dto.originalActionId),
   };
 }
