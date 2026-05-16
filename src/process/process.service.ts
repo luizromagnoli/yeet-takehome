@@ -5,17 +5,11 @@ import type { Database } from '../db/types';
 import { ActionProcessor } from '../domain/action-processor';
 import type { ProcessRequestDto } from './dto/process.dto';
 
-export interface BalanceOnlyResponse {
-  balance: number;
-}
-
 export interface ProcessResponse {
-  game_id: string;
-  transactions: Array<{ action_id: string; tx_id: string }>;
+  game_id?: string;
+  transactions?: Array<{ action_id: string; tx_id: string }>;
   balance: number;
 }
-
-export type ProcessActionResult = BalanceOnlyResponse | ProcessResponse;
 
 @Injectable()
 export class ProcessService {
@@ -24,7 +18,7 @@ export class ProcessService {
     private readonly processor: ActionProcessor,
   ) {}
 
-  async process(body: ProcessRequestDto): Promise<ProcessActionResult> {
+  async process(body: ProcessRequestDto): Promise<ProcessResponse> {
     if (!body.actions || body.actions.length === 0) {
       return this.lookupBalance(body.user_id);
     }
@@ -43,7 +37,7 @@ export class ProcessService {
     };
   }
 
-  private async lookupBalance(userId: string): Promise<BalanceOnlyResponse> {
+  private async lookupBalance(userId: string): Promise<ProcessResponse> {
     const result = await sql<{ balance: string }>`
       SELECT balance::text AS balance
       FROM user_balances
