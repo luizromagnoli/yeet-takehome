@@ -6,7 +6,7 @@ import type { RequestContext } from '../action-context';
 
 @Injectable()
 export class PendingRollbackRepository {
-  async insertTombstone(
+  async insert(
     trx: Transaction<Database>,
     ctx: RequestContext,
     action: ActionDto,
@@ -30,11 +30,12 @@ export class PendingRollbackRepository {
   }
 
   /**
-   * Returns true iff a tombstone existed for this (user, action_id) and was
-   * just deleted. The caller treats that as "this action should become a
-   * noop because a rollback for it already arrived."
+   * Atomically finds and deletes the row matching (user, action_id) if one
+   * exists. Returns true when a row was removed — the caller treats that as
+   * "this action should become a noop because a rollback for it already
+   * arrived."
    */
-  async consume(
+  async findAndDelete(
     trx: Transaction<Database>,
     userId: string,
     actionId: string,

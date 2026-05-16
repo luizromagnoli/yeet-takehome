@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { type Transaction, sql } from 'kysely';
 import type { Database } from '../../db/types';
 import type { RequestContext } from '../action-context';
-import type { AppliedActionRow } from './ledger.repository';
+import type { LedgerRow } from './ledger.repository';
 import { isoDate } from '../util/dates';
 
 @Injectable()
@@ -80,7 +80,7 @@ export class DailyStatsRepository {
   async shiftToRolledBack(
     trx: Transaction<Database>,
     ctx: RequestContext,
-    original: AppliedActionRow,
+    original: LedgerRow,
   ): Promise<void> {
     const day = isoDate(original.created_at);
     const amount = original.amount ?? 0n;

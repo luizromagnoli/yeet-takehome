@@ -22,12 +22,12 @@ export class WinHandler implements ActionHandler {
     action: ActionDto,
     txId: string,
   ): Promise<ApplyOutcome> {
-    const tombstoned = await this.pendingRollback.consume(
+    const wasPending = await this.pendingRollback.findAndDelete(
       trx,
       ctx.user_id,
       action.action_id,
     );
-    if (tombstoned) {
+    if (wasPending) {
       await this.ledger.insert(trx, ctx, action, txId, 'noop', 0n);
       return { delta: 0n, applied: false };
     }

@@ -6,7 +6,7 @@ import type { RequestContext } from '../action-context';
 import type { OriginalClaim } from './idempotency.repository';
 import { nextDayUTC, startOfDayUTC } from '../util/dates';
 
-export interface AppliedActionRow {
+export interface LedgerRow {
   kind: 'bet' | 'win' | 'rollback';
   status: ActionStatus;
   amount: bigint | null;
@@ -43,15 +43,15 @@ export class LedgerRepository {
   }
 
   /**
-   * Resolve the original action row referenced by a rollback. Uses a day
-   * window derived from the idempotency claim so the lookup is
-   * partition-pruned (pg drops sub-millisecond precision when returning
-   * timestamptz to JS, so exact created_at equality is unreliable).
+   * Resolve the action row referenced by an idempotency claim. Uses a day
+   * window derived from the claim so the lookup is partition-pruned (pg
+   * drops sub-millisecond precision when returning timestamptz to JS, so
+   * exact created_at equality is unreliable).
    */
-  async findApplied(
+  async find(
     trx: Transaction<Database>,
     original: OriginalClaim,
-  ): Promise<AppliedActionRow> {
+  ): Promise<LedgerRow> {
     const dayStart = startOfDayUTC(original.created_at);
     const dayEnd = nextDayUTC(dayStart);
     return trx

@@ -28,22 +28,22 @@ export class RollbackHandler implements ActionHandler {
       throw new Error('rollback action requires original_action_id');
     }
 
-    const original = await this.idempotency.findOriginal(
+    const original = await this.idempotency.find(
       trx,
       ctx.user_id,
       action.original_action_id,
     );
 
-    // Pre-rollback: the original has not been seen yet. Tombstone it so
-    // the later bet/win becomes a noop, and still record this rollback so
-    // retries find the same tx_id via the idempotency claim.
+    // Pre-rollback: the original has not been seen yet. Record a pending
+    // entry so the later bet/win becomes a noop, and still write this
+    // rollback so retries find the same tx_id via the idempotency claim.
     if (!original) {
-      await this.pendingRollback.insertTombstone(trx, ctx, action, txId);
+      await this.pendingRollback.insert(trx, ctx, action, txId);
       await this.ledger.insert(trx, ctx, action, txId, 'applied', 0n);
       return { delta: 0n, applied: true };
     }
 
-    const originalRow = await this.ledger.findApplied(trx, original);
+    const originalRow = await this.ledger.find(trx, original);
 
     // Idempotent zero-delta rollback when the original is already neutralised
     // (it was a noop, or it has already been rolled back by another rollback).

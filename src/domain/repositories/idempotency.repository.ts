@@ -48,15 +48,15 @@ export class IdempotencyRepository {
     return { fresh: false, tx_id: existing.tx_id };
   }
 
-  async findOriginal(
+  async find(
     trx: Transaction<Database>,
     userId: string,
-    originalActionId: string,
+    actionId: string,
   ): Promise<OriginalClaim | null> {
     const row = await trx
       .selectFrom('action_idempotency')
       .where('user_id', '=', userId)
-      .where('action_id', '=', originalActionId)
+      .where('action_id', '=', actionId)
       .select(['tx_id', 'created_at'])
       .executeTakeFirst();
     if (!row) return null;
