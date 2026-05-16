@@ -87,12 +87,18 @@ export class LedgerRepository {
   async markRolledBack(
     trx: Transaction<Database>,
     original: OriginalClaim,
-    originalRowCreatedAt: Date,
   ): Promise<void> {
+    // Same day-window approach as find(): partition pruning narrows to the
+    // month, and the tx_id (a UUID) resolves the exact row inside it. This
+    // sidesteps the precision-round-trip question — we never need exact
+    // timestamptz equality.
+    const dayStart = startOfDayUTC(original.createdAt);
+    const dayEnd = nextDayUTC(dayStart);
     await trx
       .updateTable('actions')
       .where('tx_id', '=', original.txId)
-      .where('created_at', '=', originalRowCreatedAt)
+      .where('created_at', '>=', dayStart)
+      .where('created_at', '<', dayEnd)
       .set({ status: 'rolled_back' })
       .execute();
   }

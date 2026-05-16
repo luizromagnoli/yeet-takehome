@@ -52,7 +52,7 @@ export class RollbackHandler implements ActionHandler {
     }
 
     const reverseDelta = originalRow.balanceDelta.negate();
-    await this.ledger.markRolledBack(trx, original, originalRow.createdAt);
+    await this.ledger.markRolledBack(trx, original);
     await this.ledger.insert(trx, ctx, action, txId, 'applied', reverseDelta);
     await this.dailyStats.shiftToRolledBack(trx, ctx, originalRow);
     return { delta: reverseDelta, applied: true };
