@@ -1,6 +1,6 @@
 import { Body, Controller, HttpCode, Logger, Post } from '@nestjs/common';
 import { ProcessRequestDto } from './dto/process.dto';
-import { ProcessService } from './process.service';
+import { ProcessService, type ProcessActionResult } from './process.service';
 
 @Controller('aggregator/takehome')
 export class ProcessController {
@@ -10,19 +10,17 @@ export class ProcessController {
 
   @Post('process')
   @HttpCode(200)
-  async process(@Body() body: ProcessRequestDto): Promise<unknown> {
-    const actionCount = body.actions?.length ?? 0;
+  async process(@Body() body: ProcessRequestDto): Promise<ProcessActionResult> {
     this.logger.debug(
       `request received [user_id=${body.user_id} currency=${body.currency}` +
-        ` game_id=${body.game_id ?? '-'} actions=${actionCount}]`,
+        ` game_id=${body.game_id ?? '-'} actions=${body.actions?.length ?? 0}]`,
     );
 
     const result = await this.service.process(body);
 
-    const balance = (result as { balance: number }).balance;
     this.logger.debug(
       `request processed successfully [user_id=${body.user_id}` +
-        ` balance=${balance}]`,
+        ` balance=${result.balance}]`,
     );
 
     return result;

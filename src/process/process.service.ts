@@ -15,6 +15,8 @@ export interface ProcessResponse {
   balance: number;
 }
 
+export type ProcessActionResult = BalanceOnlyResponse | ProcessResponse;
+
 @Injectable()
 export class ProcessService {
   constructor(
@@ -22,9 +24,7 @@ export class ProcessService {
     private readonly processor: ActionProcessor,
   ) {}
 
-  async process(
-    body: ProcessRequestDto,
-  ): Promise<BalanceOnlyResponse | ProcessResponse> {
+  async process(body: ProcessRequestDto): Promise<ProcessActionResult> {
     if (!body.actions || body.actions.length === 0) {
       return this.lookupBalance(body.user_id);
     }
