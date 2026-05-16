@@ -1,17 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import type { Transaction } from 'kysely';
-import type { Database, ActionStatus } from '../../db/types';
-import type { ActionDto } from '../../process/dto/process.dto';
+import type { ActionStatus, Database } from '../../db/types';
 import type { RequestContext } from '../action-context';
+import type { TxId } from '../values/ids';
+import { Money } from '../values/money';
+import type { DomainAction } from '../values/action';
 import type { OriginalClaim } from './idempotency.repository';
 import { nextDayUTC, startOfDayUTC } from '../util/dates';
 
 export interface LedgerRow {
   kind: 'bet' | 'win' | 'rollback';
   status: ActionStatus;
-  amount: bigint | null;
-  balance_delta: bigint;
-  created_at: Date;
+  amount: Money | null;
+  balanceDelta: Money;
+  createdAt: Date;
 }
 
 @Injectable()
@@ -19,25 +21,30 @@ export class LedgerRepository {
   async insert(
     trx: Transaction<Database>,
     ctx: RequestContext,
-    action: ActionDto,
-    txId: string,
+    action: DomainAction,
+    txId: TxId,
     status: 'applied' | 'noop',
-    balanceDelta: bigint,
+    balanceDelta: Money,
   ): Promise<void> {
+    const amount =
+      action.kind === 'rollback' ? null : action.amount.amount;
+    const originalActionId =
+      action.kind === 'rollback' ? action.originalActionId : null;
+
     await trx
       .insertInto('actions')
       .values({
         tx_id: txId,
-        action_id: action.action_id,
-        user_id: ctx.user_id,
+        action_id: action.actionId,
+        user_id: ctx.userId,
         currency: ctx.currency,
         game: ctx.game,
-        game_id: ctx.game_id,
-        kind: action.action,
-        amount: action.amount !== undefined ? BigInt(action.amount) : null,
-        original_action_id: action.original_action_id ?? null,
+        game_id: ctx.gameId,
+        kind: action.kind,
+        amount,
+        original_action_id: originalActionId,
         status,
-        balance_delta: balanceDelta,
+        balance_delta: balanceDelta.amount,
       })
       .execute();
   }
@@ -52,15 +59,29 @@ export class LedgerRepository {
     trx: Transaction<Database>,
     original: OriginalClaim,
   ): Promise<LedgerRow> {
-    const dayStart = startOfDayUTC(original.created_at);
+    const dayStart = startOfDayUTC(original.createdAt);
     const dayEnd = nextDayUTC(dayStart);
-    return trx
+    const row = await trx
       .selectFrom('actions')
-      .where('tx_id', '=', original.tx_id)
+      .where('tx_id', '=', original.txId)
       .where('created_at', '>=', dayStart)
       .where('created_at', '<', dayEnd)
-      .select(['kind', 'status', 'amount', 'balance_delta', 'created_at'])
+      .select([
+        'kind',
+        'status',
+        'amount',
+        'balance_delta',
+        'created_at',
+        'currency',
+      ])
       .executeTakeFirstOrThrow();
+    return {
+      kind: row.kind,
+      status: row.status,
+      amount: row.amount === null ? null : new Money(row.amount, row.currency),
+      balanceDelta: new Money(row.balance_delta, row.currency),
+      createdAt: row.created_at,
+    };
   }
 
   async markRolledBack(
@@ -70,7 +91,7 @@ export class LedgerRepository {
   ): Promise<void> {
     await trx
       .updateTable('actions')
-      .where('tx_id', '=', original.tx_id)
+      .where('tx_id', '=', original.txId)
       .where('created_at', '=', originalRowCreatedAt)
       .set({ status: 'rolled_back' })
       .execute();

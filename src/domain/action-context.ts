@@ -1,19 +1,20 @@
 import type { ProcessRequestDto } from '../process/dto/process.dto';
+import { asGameId, asUserId, type GameId, type UserId } from './values/ids';
 
 export interface RequestContext {
-  user_id: string;
+  userId: UserId;
   currency: string;
   game: string;
-  game_id: string;
+  gameId: GameId;
   finished: boolean;
 }
 
 export function buildContext(request: ProcessRequestDto): RequestContext {
   return {
-    user_id: request.user_id,
+    userId: asUserId(request.user_id),
     currency: request.currency,
     game: request.game ?? '',
-    game_id: request.game_id ?? '',
+    gameId: asGameId(request.game_id ?? ''),
     finished: request.finished === true,
   };
 }

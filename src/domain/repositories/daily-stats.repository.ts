@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { type Transaction, sql } from 'kysely';
 import type { Database } from '../../db/types';
 import type { RequestContext } from '../action-context';
+import { Money } from '../values/money';
 import type { LedgerRow } from './ledger.repository';
 import { isoDate } from '../util/dates';
 
@@ -10,20 +11,20 @@ export class DailyStatsRepository {
   async bumpBet(
     trx: Transaction<Database>,
     ctx: RequestContext,
-    amount: bigint,
+    amount: Money,
   ): Promise<void> {
     const day = isoDate(new Date());
     await trx
       .insertInto('user_daily_stats')
       .values({
-        user_id: ctx.user_id,
+        user_id: ctx.userId,
         currency: ctx.currency,
         day,
-        bets: amount,
+        bets: amount.amount,
       })
       .onConflict((oc) =>
         oc.columns(['user_id', 'currency', 'day']).doUpdateSet({
-          bets: sql<bigint>`user_daily_stats.bets + ${amount}`,
+          bets: sql<bigint>`user_daily_stats.bets + ${amount.amount}`,
         }),
       )
       .execute();
@@ -32,20 +33,20 @@ export class DailyStatsRepository {
   async bumpWin(
     trx: Transaction<Database>,
     ctx: RequestContext,
-    amount: bigint,
+    amount: Money,
   ): Promise<void> {
     const day = isoDate(new Date());
     await trx
       .insertInto('user_daily_stats')
       .values({
-        user_id: ctx.user_id,
+        user_id: ctx.userId,
         currency: ctx.currency,
         day,
-        wins: amount,
+        wins: amount.amount,
       })
       .onConflict((oc) =>
         oc.columns(['user_id', 'currency', 'day']).doUpdateSet({
-          wins: sql<bigint>`user_daily_stats.wins + ${amount}`,
+          wins: sql<bigint>`user_daily_stats.wins + ${amount.amount}`,
         }),
       )
       .execute();
@@ -59,7 +60,7 @@ export class DailyStatsRepository {
     await trx
       .insertInto('user_daily_stats')
       .values({
-        user_id: ctx.user_id,
+        user_id: ctx.userId,
         currency: ctx.currency,
         day,
         rounds: 1,
@@ -82,12 +83,12 @@ export class DailyStatsRepository {
     ctx: RequestContext,
     original: LedgerRow,
   ): Promise<void> {
-    const day = isoDate(original.created_at);
-    const amount = original.amount ?? 0n;
+    const day = isoDate(original.createdAt);
+    const amount = original.amount?.amount ?? 0n;
     if (original.kind === 'bet') {
       await trx
         .updateTable('user_daily_stats')
-        .where('user_id', '=', ctx.user_id)
+        .where('user_id', '=', ctx.userId)
         .where('currency', '=', ctx.currency)
         .where('day', '=', day)
         .set({
@@ -98,7 +99,7 @@ export class DailyStatsRepository {
     } else if (original.kind === 'win') {
       await trx
         .updateTable('user_daily_stats')
-        .where('user_id', '=', ctx.user_id)
+        .where('user_id', '=', ctx.userId)
         .where('currency', '=', ctx.currency)
         .where('day', '=', day)
         .set({

@@ -7,16 +7,19 @@ import { HandlerRegistry } from './handlers/handler-registry';
 import { BalanceRepository } from './repositories/balance.repository';
 import { DailyStatsRepository } from './repositories/daily-stats.repository';
 import { IdempotencyRepository } from './repositories/idempotency.repository';
+import { toDomainAction } from './values/action';
+import type { ActionId, TxId } from './values/ids';
+import type { Money } from './values/money';
 
 export interface ProcessedTransaction {
-  action_id: string;
-  tx_id: string;
+  actionId: ActionId;
+  txId: TxId;
 }
 
 export interface ProcessActionsResult {
-  game_id: string;
+  gameId: string;
   transactions: ProcessedTransaction[];
-  balance: bigint;
+  balance: Money;
 }
 
 @Injectable()
@@ -32,14 +35,16 @@ export class ActionProcessor {
     trx: Transaction<Database>,
     request: ProcessRequestDto,
   ): Promise<ProcessActionsResult> {
-    const actions = request.actions ?? [];
-    if (actions.length === 0) {
+    const dtos = request.actions ?? [];
+    if (dtos.length === 0) {
       throw new Error('ActionProcessor.process called without actions');
     }
 
     const ctx = buildContext(request);
+    const actions = dtos.map((dto) => toDomainAction(dto, ctx.currency));
+
     await this.balances.ensureUser(trx, ctx);
-    let runningBalance = await this.balances.lockBalance(trx, ctx.user_id);
+    let runningBalance = await this.balances.lockBalance(trx, ctx.userId);
 
     const transactions: ProcessedTransaction[] = [];
     let anyApplied = false;
@@ -47,31 +52,31 @@ export class ActionProcessor {
     for (const action of actions) {
       const claim = await this.idempotency.claim(
         trx,
-        ctx.user_id,
-        action.action_id,
+        ctx.userId,
+        action.actionId,
       );
-      transactions.push({ action_id: action.action_id, tx_id: claim.tx_id });
+      transactions.push({ actionId: action.actionId, txId: claim.txId });
       if (!claim.fresh) {
         continue;
       }
 
       const outcome = await this.handlers
-        .for(action.action)
-        .apply(trx, ctx, action, claim.tx_id, runningBalance);
-      runningBalance += outcome.delta;
+        .for(action.kind)
+        .apply(trx, ctx, action, claim.txId, runningBalance);
+      runningBalance = runningBalance.add(outcome.delta);
       if (outcome.applied) {
         anyApplied = true;
       }
     }
 
-    await this.balances.update(trx, ctx.user_id, runningBalance);
+    await this.balances.update(trx, ctx.userId, runningBalance);
 
     if (ctx.finished && anyApplied) {
       await this.dailyStats.bumpRound(trx, ctx);
     }
 
     return {
-      game_id: ctx.game_id,
+      gameId: ctx.gameId,
       transactions,
       balance: runningBalance,
     };

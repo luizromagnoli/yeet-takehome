@@ -1,5 +1,6 @@
 import { config as loadEnv } from 'dotenv';
 import { createKysely, createPool } from '../db/pool.provider';
+import { asUserId, type UserId } from '../domain/values/ids';
 
 interface CliArgs {
   users: number;
@@ -25,9 +26,9 @@ async function main(): Promise<void> {
   const db = createKysely(pool);
   const prng = mulberry32(args.seed);
 
-  const users: Array<{ id: string; currency: string; balance: bigint }> = [
+  const users: Array<{ id: UserId; currency: string; balance: bigint }> = [
     {
-      id: ACCEPTANCE_USER_ID,
+      id: asUserId(ACCEPTANCE_USER_ID),
       currency: ACCEPTANCE_USER_CURRENCY,
       balance: BigInt(ACCEPTANCE_USER_BALANCE),
     },
@@ -36,7 +37,7 @@ async function main(): Promise<void> {
   for (let i = 0; i < args.users; i++) {
     const balance = Math.floor(prng() * args.balance) + 10_000;
     users.push({
-      id: `user-${i.toString().padStart(6, '0')}`,
+      id: asUserId(`user-${i.toString().padStart(6, '0')}`),
       currency: 'USD',
       balance: BigInt(balance),
     });

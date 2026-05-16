@@ -1,26 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import type { Transaction } from 'kysely';
 import type { Database } from '../../db/types';
-import type { ActionDto } from '../../process/dto/process.dto';
 import type { RequestContext } from '../action-context';
+import type { ActionId, TxId, UserId } from '../values/ids';
+import type { RollbackAction } from '../values/action';
 
 @Injectable()
 export class PendingRollbackRepository {
   async insert(
     trx: Transaction<Database>,
     ctx: RequestContext,
-    action: ActionDto,
-    rollbackTxId: string,
+    action: RollbackAction,
+    rollbackTxId: TxId,
   ): Promise<void> {
-    if (!action.original_action_id) {
-      throw new Error('rollback action requires original_action_id');
-    }
     await trx
       .insertInto('pending_rollbacks')
       .values({
-        user_id: ctx.user_id,
-        original_action_id: action.original_action_id,
-        rollback_action_id: action.action_id,
+        user_id: ctx.userId,
+        original_action_id: action.originalActionId,
+        rollback_action_id: action.actionId,
         rollback_tx_id: rollbackTxId,
       })
       .onConflict((oc) =>
@@ -37,8 +35,8 @@ export class PendingRollbackRepository {
    */
   async findAndDelete(
     trx: Transaction<Database>,
-    userId: string,
-    actionId: string,
+    userId: UserId,
+    actionId: ActionId,
   ): Promise<boolean> {
     const deleted = await trx
       .deleteFrom('pending_rollbacks')

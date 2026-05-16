@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import type { Transaction } from 'kysely';
 import type { Database } from '../../db/types';
-import type { ActionDto } from '../../process/dto/process.dto';
 import type { RequestContext } from '../action-context';
 import { DailyStatsRepository } from '../repositories/daily-stats.repository';
 import { LedgerRepository } from '../repositories/ledger.repository';
 import { PendingRollbackRepository } from '../repositories/pending-rollback.repository';
+import type { WinAction } from '../values/action';
+import type { TxId } from '../values/ids';
+import { Money } from '../values/money';
 import type { ActionHandler, ApplyOutcome } from './action-handler';
 
 @Injectable()
@@ -19,22 +21,28 @@ export class WinHandler implements ActionHandler {
   async apply(
     trx: Transaction<Database>,
     ctx: RequestContext,
-    action: ActionDto,
-    txId: string,
+    action: WinAction,
+    txId: TxId,
   ): Promise<ApplyOutcome> {
     const wasPending = await this.pendingRollback.findAndDelete(
       trx,
-      ctx.user_id,
-      action.action_id,
+      ctx.userId,
+      action.actionId,
     );
     if (wasPending) {
-      await this.ledger.insert(trx, ctx, action, txId, 'noop', 0n);
-      return { delta: 0n, applied: false };
+      await this.ledger.insert(
+        trx,
+        ctx,
+        action,
+        txId,
+        'noop',
+        Money.zero(ctx.currency),
+      );
+      return { delta: Money.zero(ctx.currency), applied: false };
     }
 
-    const amount = BigInt(action.amount ?? 0);
-    await this.ledger.insert(trx, ctx, action, txId, 'applied', amount);
-    await this.dailyStats.bumpWin(trx, ctx, amount);
-    return { delta: amount, applied: true };
+    await this.ledger.insert(trx, ctx, action, txId, 'applied', action.amount);
+    await this.dailyStats.bumpWin(trx, ctx, action.amount);
+    return { delta: action.amount, applied: true };
   }
 }

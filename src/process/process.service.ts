@@ -34,9 +34,12 @@ export class ProcessService {
       .execute((trx) => this.processor.process(trx, body));
 
     return {
-      game_id: result.game_id,
-      transactions: result.transactions,
-      balance: Number(result.balance),
+      game_id: result.gameId,
+      transactions: result.transactions.map((t) => ({
+        action_id: t.actionId,
+        tx_id: t.txId,
+      })),
+      balance: result.balance.toNumber(),
     };
   }
 

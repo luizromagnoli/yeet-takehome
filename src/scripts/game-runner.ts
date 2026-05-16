@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
 import { createKysely, createPool } from '../db/pool.provider';
+import { asUserId, type UserId } from '../domain/values/ids';
 
 interface CliArgs {
   users: number;
@@ -107,11 +108,11 @@ async function ensureUsers(
   const db = createKysely(pool);
   const prng = seededPrng(args.seed, -1);
 
-  const users: Array<{ id: string; balance: bigint }> = [];
+  const users: Array<{ id: UserId; balance: bigint }> = [];
   for (let i = 0; i < args.users; i++) {
     const balance = Math.floor(prng() * args.initialBalance) + 10_000;
     users.push({
-      id: `sim-${i.toString().padStart(6, '0')}`,
+      id: asUserId(`sim-${i.toString().padStart(6, '0')}`),
       balance: BigInt(balance),
     });
   }

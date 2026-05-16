@@ -1,12 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import type { Transaction } from 'kysely';
 import type { Database } from '../../db/types';
-import type { ActionDto } from '../../process/dto/process.dto';
 import type { RequestContext } from '../action-context';
 import { InsufficientFundsError } from '../errors';
 import { DailyStatsRepository } from '../repositories/daily-stats.repository';
 import { LedgerRepository } from '../repositories/ledger.repository';
 import { PendingRollbackRepository } from '../repositories/pending-rollback.repository';
+import type { BetAction } from '../values/action';
+import type { TxId } from '../values/ids';
+import { Money } from '../values/money';
 import type { ActionHandler, ApplyOutcome } from './action-handler';
 
 @Injectable()
@@ -20,26 +22,33 @@ export class BetHandler implements ActionHandler {
   async apply(
     trx: Transaction<Database>,
     ctx: RequestContext,
-    action: ActionDto,
-    txId: string,
-    runningBalance: bigint,
+    action: BetAction,
+    txId: TxId,
+    runningBalance: Money,
   ): Promise<ApplyOutcome> {
     const wasPending = await this.pendingRollback.findAndDelete(
       trx,
-      ctx.user_id,
-      action.action_id,
+      ctx.userId,
+      action.actionId,
     );
     if (wasPending) {
-      await this.ledger.insert(trx, ctx, action, txId, 'noop', 0n);
-      return { delta: 0n, applied: false };
+      await this.ledger.insert(
+        trx,
+        ctx,
+        action,
+        txId,
+        'noop',
+        Money.zero(ctx.currency),
+      );
+      return { delta: Money.zero(ctx.currency), applied: false };
     }
 
-    const amount = BigInt(action.amount ?? 0);
-    if (runningBalance < amount) {
+    if (runningBalance.isLessThan(action.amount)) {
       throw new InsufficientFundsError();
     }
-    await this.ledger.insert(trx, ctx, action, txId, 'applied', -amount);
-    await this.dailyStats.bumpBet(trx, ctx, amount);
-    return { delta: -amount, applied: true };
+    const delta = action.amount.negate();
+    await this.ledger.insert(trx, ctx, action, txId, 'applied', delta);
+    await this.dailyStats.bumpBet(trx, ctx, action.amount);
+    return { delta, applied: true };
   }
 }
