@@ -1,0 +1,61 @@
+import { Injectable } from '@nestjs/common';
+import type { Transaction } from 'kysely';
+import type { Database } from '../../db/types';
+import type { ActionDto } from '../../process/dto/process.dto';
+import type { RequestContext } from '../action-context';
+import { DailyStatsRepository } from '../repositories/daily-stats.repository';
+import { IdempotencyRepository } from '../repositories/idempotency.repository';
+import { LedgerRepository } from '../repositories/ledger.repository';
+import { PendingRollbackRepository } from '../repositories/pending-rollback.repository';
+import type { ActionHandler, ApplyOutcome } from './action-handler';
+
+@Injectable()
+export class RollbackHandler implements ActionHandler {
+  constructor(
+    private readonly idempotency: IdempotencyRepository,
+    private readonly ledger: LedgerRepository,
+    private readonly dailyStats: DailyStatsRepository,
+    private readonly pendingRollback: PendingRollbackRepository,
+  ) {}
+
+  async apply(
+    trx: Transaction<Database>,
+    ctx: RequestContext,
+    action: ActionDto,
+    txId: string,
+  ): Promise<ApplyOutcome> {
+    if (!action.original_action_id) {
+      throw new Error('rollback action requires original_action_id');
+    }
+
+    const original = await this.idempotency.findOriginal(
+      trx,
+      ctx.user_id,
+      action.original_action_id,
+    );
+
+    // Pre-rollback: the original has not been seen yet. Tombstone it so
+    // the later bet/win becomes a noop, and still record this rollback so
+    // retries find the same tx_id via the idempotency claim.
+    if (!original) {
+      await this.pendingRollback.insertTombstone(trx, ctx, action, txId);
+      await this.ledger.insert(trx, ctx, action, txId, 'applied', 0n);
+      return { delta: 0n, applied: true };
+    }
+
+    const originalRow = await this.ledger.findApplied(trx, original);
+
+    // Idempotent zero-delta rollback when the original is already neutralised
+    // (it was a noop, or it has already been rolled back by another rollback).
+    if (originalRow.status !== 'applied') {
+      await this.ledger.insert(trx, ctx, action, txId, 'applied', 0n);
+      return { delta: 0n, applied: true };
+    }
+
+    const reverseDelta = -originalRow.balance_delta;
+    await this.ledger.markRolledBack(trx, original, originalRow.created_at);
+    await this.ledger.insert(trx, ctx, action, txId, 'applied', reverseDelta);
+    await this.dailyStats.shiftToRolledBack(trx, ctx, originalRow);
+    return { delta: reverseDelta, applied: true };
+  }
+}
