@@ -38,13 +38,16 @@ export BET_PROCESSOR_HMAC_SECRET=test
 npm run migrate
 
 # 5. Build and run the test suite
-#    Note: tests TRUNCATE the DB between cases — that's why seeding
-#    happens *after* this step.
+#    Tests run against a separate `yeet_test` database (created by the
+#    postgres init script on first compose up), so they never touch the
+#    dev/app data. The test runner re-applies migrations and truncates
+#    between cases automatically.
 npm run build
-npm test           # 21 tests across acceptance / concurrency / HMAC / reporting
+npm test           # 23 tests across acceptance / concurrency / HMAC / reporting
 
-# 6. Seed 1000 users (the acceptance user 8|USDT|USD is always seeded at
-#    balance 74322001 so the PDF scenarios work against a live API)
+# 6. Seed 1000 users in the app DB. The acceptance user 8|USDT|USD is
+#    always seeded at balance 74322001 so the PDF scenarios work against a
+#    live API. Other users are distributed across USD / EUR / GBP.
 npm run seed -- --users 1000
 
 # 7. Start the API — pick ONE of:
@@ -55,23 +58,20 @@ node dist/main.js
 #       it accepts traffic)
 docker compose up --build
 
-# 8. With the API running on :3000, run the RTP simulator
-npm run game -- --users 200 --rounds 30000 --seed 42 --base-url http://localhost:3000
-# Prints client-side and reported RTP, then PASS/FAIL on ±1% of 0.95.
+# 8. With the API running on :3000, run the multi-currency RTP simulator
+npm run game -- --users 300 --rounds 30000 --seed 42 --base-url http://localhost:3000
+# Distributes simulated users across USD / EUR / GBP, then prints client-side
+# and reported per-currency RTP plus PASS/FAIL on ±1% of 0.95 for each.
 ```
 
-If you choose path 7B (full Docker), steps 4–6 can be done either before
-starting compose or after — migrations are idempotent and the seed script
-just upserts. The reviewer-friendly one-shot path is:
+The reviewer-friendly one-shot path (everything in Docker):
 
 ```sh
 docker compose up --build -d                                   # postgres + api, auto-migrated
 DATABASE_URL=postgres://yeet:yeet@localhost:5432/yeet \
-  npm run seed -- --users 1000                                 # seed
-npm test                                                       # tests (they truncate state)
-DATABASE_URL=postgres://yeet:yeet@localhost:5432/yeet \
-  npm run seed -- --users 1000                                 # re-seed after the truncate
-npm run game -- --users 200 --rounds 30000 --seed 42 --base-url http://localhost:3000
+  npm run seed -- --users 1000                                 # seed the app DB
+npm test                                                       # uses yeet_test, untouched by seed
+npm run game -- --users 300 --rounds 30000 --seed 42 --base-url http://localhost:3000
 ```
 
 ### Manual sanity check
@@ -315,6 +315,14 @@ so the simulation is deterministic regardless of worker interleaving.
 These were deliberately scoped out of v1 — each is a known follow-up with a
 clear migration path, not an oversight.
 
+- **AWS CDK infrastructure** — TypeScript CDK app provisioning the prod stack
+  (VPC, ECS Fargate service for the API, RDS for Postgres with parameter group
+  + automated backups, Secrets Manager for the HMAC secret, ALB with health
+  checks against `/health` and `/ready`, IAM roles, CloudWatch dashboards).
+  Demonstrates infra-as-code skill end to end. Tracked as the next pickup.
+- **GitHub Actions CI** — workflow that runs `docker compose up -d postgres`,
+  `npm ci`, `npm run build`, `npm test` on every push, plus the game runner
+  as a separate job. Surfaces the green checks directly on the PR.
 - **Partition retention** — a monthly job that `DETACH PARTITION CONCURRENTLY`s
   partitions older than the regulatory retention window and ships them to
   S3 cold storage.
