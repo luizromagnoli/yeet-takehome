@@ -1,6 +1,5 @@
 import { type Kysely, sql } from 'kysely';
 
-const ACTION_IDEMPOTENCY_PARTITIONS = 16;
 const ACTIONS_INITIAL_PARTITIONS_AHEAD = 3;
 
 export async function up(db: Kysely<unknown>): Promise<void> {
@@ -58,6 +57,11 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     ).execute(db);
   }
 
+  // Plain table — see the architecture-decisions section of README.md. We
+  // treat this as operational state rather than history: a daily cron prunes
+  // rows older than the rollback window, which bounds the row count and
+  // removes the case for partitioning. The created_at index supports that
+  // cron's range delete.
   await sql`
     CREATE TABLE action_idempotency (
       user_id text NOT NULL,
@@ -65,17 +69,13 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       tx_id uuid NOT NULL,
       created_at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (user_id, action_id)
-    ) PARTITION BY HASH (user_id)
+    )
   `.execute(db);
 
-  for (let i = 0; i < ACTION_IDEMPOTENCY_PARTITIONS; i++) {
-    const suffix = i.toString().padStart(2, '0');
-    await sql.raw(
-      `CREATE TABLE action_idempotency_p${suffix} ` +
-        `PARTITION OF action_idempotency ` +
-        `FOR VALUES WITH (MODULUS ${ACTION_IDEMPOTENCY_PARTITIONS}, REMAINDER ${i})`,
-    ).execute(db);
-  }
+  await sql`
+    CREATE INDEX action_idempotency_created_idx
+      ON action_idempotency (created_at)
+  `.execute(db);
 
   await sql`
     CREATE TABLE pending_rollbacks (
