@@ -281,13 +281,19 @@ Every bet, win, and rollback writes one immutable row here, carrying:
 
 - `tx_id` — server-generated UUID identifying this ledger entry.
 - `action_id` — the client-supplied ID (used for idempotency).
+- `user_id`, `currency` — denormalized onto every row so the ledger is
+  self-describing and per-user reads don't need a join.
+- `game`, `game_id` — the game name and round identifier from the request.
 - `kind` — `'bet' | 'win' | 'rollback'`.
+- `amount` — bet/win amount in minor units; null for rollback rows
+  (the amount is implicit in the original they reference).
+- `original_action_id` — populated only on rollback rows.
 - `status` — `'applied' | 'noop' | 'rolled_back'`. `noop` covers
   pre-rollbacks; `rolled_back` is set on the original when a rollback
   resolves.
 - `balance_delta` — the signed effect on the user's balance (zero for
   `noop` rows and for rollbacks of already-noop'd actions).
-- `original_action_id` — populated only on rollback rows.
+- `created_at` — timestamptz; doubles as the partition key.
 
 Partitioned monthly by `created_at` so each partition stays cache-friendly
 even at billion-row scale, and historical retention becomes a
