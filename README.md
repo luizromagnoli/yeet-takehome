@@ -245,20 +245,99 @@ ensure coverage:
    executes the DDL.
 3. A `npm run ensure-partitions` CLI is available for manual remediation.
 
-## Schema (high level)
+## Schema
 
-- `users` — id + currency.
-- `user_balances` — id, balance (CHECK ≥ 0), updated_at. Row-locked per user.
-- `actions` — append-only ledger, monthly RANGE partitions. PK
-  `(tx_id, created_at)` because the partition key must be in the PK; the
-  hot-path local index is `(user_id, created_at DESC)`.
-- `action_idempotency` — 16 HASH partitions on `user_id`. PK
-  `(user_id, action_id)`. Carries `created_at` so the rollback flow can look
-  the original action back up in `actions` with partition pruning.
-- `pending_rollbacks` — pre-rollback tombstones keyed by
-  `(user_id, original_action_id)`.
-- `user_daily_stats` — pre-aggregated rollup that keeps RTP queries fast at
-  any scale.
+Six tables. Each has a distinct role in the bet-processing pipeline; the
+split is deliberate (see the partitioning and idempotency notes above) and
+keeps every write on the hot path bounded to a small handful of indexed
+operations.
+
+### `users` — the identity record
+
+One row per `user_id` (e.g. `8|USDT|USD`), recording the currency a user
+transacts in and when the account was first seen. Created on the first
+request that touches a new user via `INSERT ... ON CONFLICT DO NOTHING`.
+
+The locked-in currency is what enforces the "a given user always implies
+the same currency" assumption: later requests with a mismatched currency
+are rejected before any balance change.
+
+### `user_balances` — the authoritative balance, locked per user
+
+One row per user holding the current `balance` (BIGINT minor units) plus
+`updated_at`. The `CHECK (balance >= 0)` is a database-level backstop: the
+application rejects overdraws with code 100 before writing, but if logic
+ever regressed, the database would refuse the write.
+
+This table is the per-user concurrency primitive. Every action-bearing
+request does `SELECT … FOR UPDATE` on its user's row first, which serializes
+same-user requests through the lock while different-user requests proceed
+in parallel — including the case where a rollback and its original arrive
+simultaneously.
+
+### `actions` — the append-only ledger (monthly RANGE-partitioned)
+
+Every bet, win, and rollback writes one immutable row here, carrying:
+
+- `tx_id` — server-generated UUID identifying this ledger entry.
+- `action_id` — the client-supplied ID (used for idempotency).
+- `kind` — `'bet' | 'win' | 'rollback'`.
+- `status` — `'applied' | 'noop' | 'rolled_back'`. `noop` covers
+  pre-rollbacks; `rolled_back` is set on the original when a rollback
+  resolves.
+- `balance_delta` — the signed effect on the user's balance (zero for
+  `noop` rows and for rollbacks of already-noop'd actions).
+- `original_action_id` — populated only on rollback rows.
+
+Partitioned monthly by `created_at` so each partition stays cache-friendly
+even at billion-row scale, and historical retention becomes a
+`DETACH PARTITION` operation. The primary key is `(tx_id, created_at)`
+because Postgres requires the partition key in any unique constraint on a
+partitioned table; `tx_id` is still effectively globally unique on its own.
+The local index `(user_id, created_at DESC)` covers per-user history reads.
+
+### `action_idempotency` — the idempotency claim table (16 HASH partitions on `user_id`)
+
+A second table — not a constraint on `actions` — because the global unique
+key we actually want is `(user_id, action_id)`, but a unique constraint on
+a partitioned table must include the partition key. Splitting it out lets
+us partition this one by `HASH(user_id)` instead (so retries for the same
+user always route to the same partition) while keeping the ledger
+partitioned by time.
+
+Holds `(user_id, action_id, tx_id, created_at)`. The hot-path claim is
+`INSERT … ON CONFLICT (user_id, action_id) DO NOTHING RETURNING tx_id` in
+the same transaction as the `actions` insert: a returned row means fresh
+work, an empty result means a previous attempt already committed and we
+return the original `tx_id`. The two writes can never drift. The carried
+`created_at` lets the rollback flow look the original action up in
+`actions` with partition pruning instead of a full scan.
+
+### `pending_rollbacks` — tombstones for pre-rollbacks
+
+When a rollback arrives before its original (network reordering, retry
+race), there is nothing in `actions` to mark as `rolled_back`. We record a
+tombstone here keyed by `(user_id, original_action_id)`, also tracking the
+rollback's `action_id` and `tx_id`. The rollback itself is written to the
+ledger with `status='applied'` and `balance_delta=0` so it's still
+idempotent on retry.
+
+When the original later arrives, the processing path checks this table; if
+a row exists, the action is recorded as `status='noop'` with
+`balance_delta=0` and the tombstone is removed. The PK enforces
+"first-rollback-wins" if two pre-rollbacks for the same original race in.
+
+### `user_daily_stats` — the pre-aggregated RTP rollup
+
+`(user_id, currency, day)` PK holding running daily totals: `bets`, `wins`,
+`rolled_back_bets`, `rolled_back_wins`, and `rounds`. Updated transactionally
+with each action so it cannot drift from the ledger.
+
+This is what keeps the reporting endpoints fast at any scale: they sum
+pre-aggregated daily totals (a single index scan over a tight date range)
+instead of scanning `actions` itself. The `(day)` secondary index supports
+the casino-wide report. Per the spec, rolled-back amounts are excluded
+from `total_bet` / `total_win` and reported separately.
 
 ## Tests
 
