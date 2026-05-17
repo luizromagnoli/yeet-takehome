@@ -34,15 +34,18 @@ export function toDomainAction(dto: ActionDto, currency: string): DomainAction {
     if (dto.amount === undefined) {
       throw new Error(`${dto.action} action requires an amount`);
     }
+
     return {
       kind: dto.action,
       actionId,
       amount: Money.of(dto.amount, currency),
     };
   }
+
   if (!dto.originalActionId) {
     throw new Error('rollback action requires original_action_id');
   }
+
   return {
     kind: 'rollback',
     actionId,

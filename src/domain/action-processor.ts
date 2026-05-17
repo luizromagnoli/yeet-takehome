@@ -55,6 +55,7 @@ export class ActionProcessor {
         ctx.userId,
         action.actionId,
       );
+
       transactions.push({ actionId: action.actionId, txId: claim.txId });
       if (!claim.fresh) {
         continue;

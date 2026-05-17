@@ -131,15 +131,14 @@ Casino-wide RTP totals grouped by currency.
 
 ## Architecture decisions
 
-### Partitioning in v1, not later
+### `actions` partitioned in v1, `action_idempotency` deliberately not
 
 `actions` is RANGE-partitioned monthly on `created_at` from day one.
-Idempotency lives in a separate `action_idempotency` table HASH-partitioned
-16 ways on `user_id` (Postgres requires the partition key in any unique
-constraint on a partitioned table, so a global `UNIQUE(user_id, action_id)`
-needs its own table).
+Idempotency lives in a separate `action_idempotency` table because Postgres
+requires the partition key in any unique constraint on a partitioned table,
+and the unique key we want is `(user_id, action_id)` — without `created_at`.
 
-I considered shipping an unpartitioned schema and migrating later. The
+I considered shipping an unpartitioned `actions` and migrating later. The
 upfront cost of partitioning today is small — one extra table, ~5% INSERT
 overhead, and a `ensurePartitions()` boot hook. The deferred cost grows
 non-linearly: backfilling a separate idempotency table at 1B rows takes
@@ -148,6 +147,35 @@ needs careful coordination. Past ~100M rows the migration becomes a
 multi-week project. Doing it now is half a day of engineering with the same
 end state, and it bakes the right habits (queries written with partition
 keys, per-partition VACUUM, retention as `DETACH PARTITION`) from the start.
+
+### `action_idempotency` is operational state, not history
+
+A daily cron (`IdempotencyCleanupService`, `@Cron('0 4 * * *')`) prunes rows
+older than the rollback window (default 90 days, configurable via
+`ACTION_IDEMPOTENCY_RETENTION_DAYS`). The retention floor is set by how
+late a legitimate rollback might arrive — once the original is past that
+window, a rollback referencing it is operationally unsafe regardless of
+what this table says.
+
+Because the table is bounded by cleanup rather than growing forever, the
+case for HASH-partitioning it (smaller per-partition B-trees, scoped
+autovacuum, cache locality) collapses. A plain table with
+`UNIQUE(user_id, action_id)` and an index on `created_at` (to support the
+cleanup scan) is simpler, has no partition-routing footprint in the schema
+or the code, and matches what this table is — short-lived de-dup state.
+
+The cleanup is batched (10k rows per DELETE, looped until empty) so it
+spreads dead-tuple churn over the run instead of producing one giant
+transaction, and uses the same `pg_try_advisory_lock` leader-election
+pattern as `PartitionCronService` so only one instance prunes when the
+service is horizontally scaled. A `npm run prune-idempotency` CLI is
+available for manual remediation.
+
+If steady-state traffic eventually pushes this table into billions of rows
+even at 90-day retention, partitioning can be added via a zero-downtime
+migration: stand up a partitioned twin, switch writes, drain the old table
+over one retention window, drop it. That's an order of magnitude cheaper
+than the `actions` migration story, which is what justifies deferring it.
 
 ### Idempotency at the storage layer
 
@@ -231,7 +259,14 @@ wrong length, non-hex characters, mismatched bytes — returns `403`. Health
 endpoints opt out via a `@SkipHmac()` decorator so health checks don't
 need to compute signatures.
 
-## Partition maintenance
+## Scheduled maintenance
+
+Two cron services run inside the API process. Both use the same
+`pg_try_advisory_lock` leader-election pattern so only one instance executes
+at a time when the service is horizontally scaled, and each has a CLI
+counterpart for manual remediation.
+
+### Partition coverage (`PartitionCronService`)
 
 `actions` needs partitions covering at least the current month plus the next
 few; without them, INSERTs for the new month fail outright. Three safeguards
@@ -239,11 +274,20 @@ ensure coverage:
 
 1. `ensurePartitions(monthsAhead=3)` runs on every API boot before the HTTP
    listener accepts traffic.
-2. A daily `@Cron('0 3 * * *')` re-runs the same routine. When the service
-   is horizontally scaled, the cron body acquires
-   `pg_try_advisory_lock(hashtext('ensure_partitions'))` so only one instance
-   executes the DDL.
+2. A daily `@Cron('0 3 * * *')` re-runs the same routine under
+   `pg_try_advisory_lock(hashtext('ensure_partitions'))`.
 3. A `npm run ensure-partitions` CLI is available for manual remediation.
+
+### Idempotency cleanup (`IdempotencyCleanupService`)
+
+`action_idempotency` is treated as operational state with a finite retention
+window (default 90 days, configurable via `ACTION_IDEMPOTENCY_RETENTION_DAYS`).
+
+1. A daily `@Cron('0 4 * * *')` prunes rows where `created_at < now() -
+   retention` under `pg_try_advisory_lock(hashtext('idempotency_cleanup'))`.
+2. The DELETE is batched (10k rows per statement, looped until empty) so
+   dead-tuple churn is spread across the run and autovacuum keeps pace.
+3. A `npm run prune-idempotency` CLI is available for manual remediation.
 
 ## Schema
 
@@ -302,22 +346,27 @@ because Postgres requires the partition key in any unique constraint on a
 partitioned table; `tx_id` is still effectively globally unique on its own.
 The local index `(user_id, created_at DESC)` covers per-user history reads.
 
-### `action_idempotency` — the idempotency claim table (16 HASH partitions on `user_id`)
+### `action_idempotency` — the idempotency claim table (plain table, pruned daily)
 
 A second table — not a constraint on `actions` — because the global unique
-key we actually want is `(user_id, action_id)`, but a unique constraint on
-a partitioned table must include the partition key. Splitting it out lets
-us partition this one by `HASH(user_id)` instead (so retries for the same
-user always route to the same partition) while keeping the ledger
-partitioned by time.
+key we want is `(user_id, action_id)` without `created_at`, and a unique
+constraint on a partitioned table must include the partition key. Splitting
+idempotency out of the partitioned ledger lets the unique key be
+exactly what we want.
 
-Holds `(user_id, action_id, tx_id, created_at)`. The hot-path claim is
-`INSERT … ON CONFLICT (user_id, action_id) DO NOTHING RETURNING tx_id` in
-the same transaction as the `actions` insert: a returned row means fresh
-work, an empty result means a previous attempt already committed and we
-return the original `tx_id`. The two writes can never drift. The carried
-`created_at` lets the rollback flow look the original action up in
-`actions` with partition pruning instead of a full scan.
+Holds `(user_id, action_id, tx_id, created_at)` with `PRIMARY KEY
+(user_id, action_id)`. The hot-path claim is `INSERT … ON CONFLICT
+(user_id, action_id) DO NOTHING RETURNING tx_id` in the same transaction
+as the `actions` insert: a returned row means fresh work, an empty result
+means a previous attempt already committed and we return the original
+`tx_id`. The two writes can never drift. The carried `created_at` lets the
+rollback flow look the original action up in `actions` with partition
+pruning instead of a full scan, and supports the daily cleanup cron's
+range delete (covered by `action_idempotency_created_idx`).
+
+This table is treated as operational state, not history — see the
+architecture-decisions section for why it's a plain table rather than
+HASH-partitioned, and how the cleanup cron bounds its size.
 
 ### `pending_rollbacks` — tombstones for pre-rollbacks
 
@@ -428,10 +477,11 @@ clear migration path, not an oversight.
 
 ## Configuration
 
-| Env var                          | Purpose                                | Default                                  |
-|----------------------------------|----------------------------------------|------------------------------------------|
-| `DATABASE_URL`                   | Postgres connection string             | (required)                               |
-| `BET_PROCESSOR_HMAC_SECRET`      | HMAC-SHA256 shared secret              | `test`                                   |
-| `PORT`                           | HTTP listen port                       | `3000`                                   |
-| `PARTITIONS_MONTHS_AHEAD`        | How many future months to ensure       | `3`                                      |
-| `API_BASE_URL`                   | Used by the game runner                | `http://localhost:3000`                  |
+| Env var                               | Purpose                                            | Default                 |
+|---------------------------------------|----------------------------------------------------|-------------------------|
+| `DATABASE_URL`                        | Postgres connection string                         | (required)              |
+| `BET_PROCESSOR_HMAC_SECRET`           | HMAC-SHA256 shared secret                          | `test`                  |
+| `PORT`                                | HTTP listen port                                   | `3000`                  |
+| `PARTITIONS_MONTHS_AHEAD`             | How many future months to ensure                   | `3`                     |
+| `ACTION_IDEMPOTENCY_RETENTION_DAYS`   | Retention window for the idempotency cleanup cron  | `90`                    |
+| `API_BASE_URL`                        | Used by the game runner                            | `http://localhost:3000` |

@@ -18,7 +18,7 @@ export class ProcessService {
   constructor(
     @Inject(KYSELY) private readonly db: Kysely<Database>,
     private readonly processor: ActionProcessor,
-    private readonly balances: BalanceRepository,
+    private readonly balanceRepository: BalanceRepository,
   ) {}
 
   async process(body: ProcessRequestDto): Promise<ProcessResponse> {
@@ -41,7 +41,7 @@ export class ProcessService {
   }
 
   private async lookupBalance(userId: string): Promise<ProcessResponse> {
-    const balance = await this.balances.read(this.db, asUserId(userId));
+    const balance = await this.balanceRepository.read(this.db, asUserId(userId));
     return { balance: balance?.toNumber() ?? 0 };
   }
 }
