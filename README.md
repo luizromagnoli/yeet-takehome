@@ -91,6 +91,16 @@ curl -s -X POST http://localhost:3000/aggregator/takehome/process \
 curl -s http://localhost:3000/health    # → {"status":"ok"}
 ```
 
+### Postman collection
+
+`postman/yeet-takehome.postman_collection.json` is an importable Postman
+collection covering every endpoint plus the full PDF acceptance script
+(A–J), the report endpoints, and the HMAC negative cases. A collection-level
+pre-request script signs each request body with `HMAC_SHA256(secret, raw body)`
+automatically; the `baseUrl` and `secret` collection variables default to
+`http://localhost:3000` and `test`. Verified end-to-end via `newman run` —
+24/24 requests return the expected status codes.
+
 ### Reset the database
 
 If you want to start clean:

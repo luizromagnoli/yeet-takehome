@@ -1,0 +1,511 @@
+{
+  "info": {
+    "name": "Yeet Casino bet processor",
+    "description": "Manual harness for the Yeet take-home. Every PDF acceptance scenario, both report endpoints, and the health checks.\n\n**How HMAC signing works in this collection:** a single pre-request script at the collection level signs every POST/GET body with HMAC_SHA256(secret, raw body). The `secret` and `baseUrl` are collection variables — set them in the collection's *Variables* tab if you want anything other than the defaults (`test` and `http://localhost:3000`).\n\n**Skipping HMAC on demand:** the missing/invalid-auth scenarios set a request-level `skipHmac` variable so the pre-request leaves the Authorization header alone. Health endpoints are detected by URL and never signed (the server skips HMAC for them).\n\n**Report date range:** the report folder's pre-request script populates `reportFrom` / `reportTo` to cover the current UTC day, so requests work immediately without manual date entry.\n\nStart the API first (`docker compose up --build` or `node dist/main.js`), seed at least the acceptance user (`npm run seed -- --users 1`), then run requests top to bottom.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Health endpoints are @SkipHmac'd server-side.",
+          "const url = pm.request.url.toString();",
+          "if (/\\/(health|ready)(\\?|$)/.test(url)) {",
+          "    return;",
+          "}",
+          "",
+          "// Per-request opt-outs are encoded as static request headers so",
+          "// nothing leaks between requests in the same iteration:",
+          "//   X-Skip-Hmac: true             — leave Authorization untouched (or absent)",
+          "//   X-Override-Hmac: <full value> — replace Authorization with this value verbatim",
+          "// Postman's pre-request scripts run collection → folder → request,",
+          "// which makes request-level variable opt-outs leaky; headers are",
+          "// part of the request definition and visible here immediately.",
+          "const skipHeader = pm.request.headers.get('X-Skip-Hmac');",
+          "if (skipHeader === 'true') {",
+          "    pm.request.headers.remove('X-Skip-Hmac');",
+          "    pm.request.headers.remove('Authorization');",
+          "    return;",
+          "}",
+          "const overrideHeader = pm.request.headers.get('X-Override-Hmac');",
+          "if (overrideHeader) {",
+          "    pm.request.headers.remove('X-Override-Hmac');",
+          "    pm.request.headers.upsert({ key: 'Authorization', value: overrideHeader });",
+          "    return;",
+          "}",
+          "",
+          "const secret = pm.collectionVariables.get('secret') || 'test';",
+          "",
+          "// Resolve any {{vars}} in the raw body the same way Postman would",
+          "// when it actually sends the request, so the HMAC matches the bytes",
+          "// on the wire.",
+          "let body = '';",
+          "if (pm.request.body && pm.request.body.mode === 'raw' && pm.request.body.raw) {",
+          "    body = pm.request.body.raw.replace(/\\{\\{([^}]+)\\}\\}/g, function (_, name) {",
+          "        const v = pm.variables.get(name.trim());",
+          "        return v === undefined ? '' : v;",
+          "    });",
+          "}",
+          "",
+          "const hex = CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+          "pm.request.headers.upsert({ key: 'Authorization', value: 'HMAC-SHA256 ' + hex });"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+    { "key": "secret", "value": "test", "type": "string" },
+    { "key": "userId", "value": "8|USDT|USD", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health  (liveness)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /ready  (readiness — pings the DB)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/ready", "host": ["{{baseUrl}}"], "path": ["ready"] }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Acceptance scenarios (PDF A–J)",
+      "item": [
+        {
+          "name": "A. Missing Authorization → 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Skip-Hmac", "value": "true" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "B. Balance lookup",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\",\n  \"game\": \"acceptance:test\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "C. Single bet, finished (no win)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\",\n  \"game\": \"acceptance:test\",\n  \"game_id\": \"1761032910245540510\",\n  \"finished\": true,\n  \"actions\": [\n    { \"action\": \"bet\", \"action_id\": \"3b42f070-dab5-4d6c-8bc6-7241b68f00bd\", \"amount\": 100 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "D. Bet + win in the same call",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\",\n  \"game\": \"acceptance:test\",\n  \"game_id\": \"1761032910488163506\",\n  \"actions\": [\n    { \"action\": \"bet\", \"action_id\": \"7c8affbf-53fd-4fcc-b1ca-18118c5dd287\", \"amount\": 100 },\n    { \"action\": \"win\", \"action_id\": \"86441c7a-560e-4501-b829-110af6a1b956\", \"amount\": 250 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "E. Insufficient funds → code 100",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\",\n  \"game\": \"acceptance:test\",\n  \"game_id\": \"1761032911004723918\",\n  \"finished\": true,\n  \"actions\": [\n    { \"action\": \"bet\", \"action_id\": \"6c1e98e8-8e93-4856-b6ef-8b2ddc6c4cbc\", \"amount\": 74322202 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "F1. Bet (separate call)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\",\n  \"game\": \"acceptance:test\",\n  \"game_id\": \"1761032911166149146\",\n  \"actions\": [\n    { \"action\": \"bet\", \"action_id\": \"19bd35d5-50c3-4720-a402-145a46ab874c\", \"amount\": 100 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "F2. Win finished (separate call, closes round)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\",\n  \"game\": \"acceptance:test\",\n  \"game_id\": \"1761032911166149146\",\n  \"finished\": true,\n  \"actions\": [\n    { \"action\": \"win\", \"action_id\": \"dcafc246-24b6-458b-a823-f6e7ecd6e9c3\", \"amount\": 700 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "G1. Bet (will be rolled back)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\",\n  \"game\": \"acceptance:test\",\n  \"game_id\": \"1761034000123456789\",\n  \"actions\": [\n    { \"action\": \"bet\", \"action_id\": \"4dbcbf1d-bcf6-43e9-9a62-7d3c0f3c6486\", \"amount\": 100 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "G2. Rollback the G1 bet",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\",\n  \"game\": \"acceptance:test\",\n  \"game_id\": \"1761034000123456789\",\n  \"finished\": true,\n  \"actions\": [\n    {\n      \"action\": \"rollback\",\n      \"action_id\": \"c9a9c3a7-e9e8-4f5a-9fdf-1d8a377d1b8f\",\n      \"original_action_id\": \"4dbcbf1d-bcf6-43e9-9a62-7d3c0f3c6486\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "H1. First bet (idempotency setup)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\",\n  \"game\": \"acceptance:test\",\n  \"game_id\": \"1761032913606999220\",\n  \"actions\": [\n    { \"action\": \"bet\", \"action_id\": \"f61c5eba-fb26-4070-89b5-c3a2edf54c02\", \"amount\": 100 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "H2. Re-send same bet + new bet (idempotency replay)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\",\n  \"game\": \"acceptance:test\",\n  \"game_id\": \"1761032913606999220\",\n  \"actions\": [\n    { \"action\": \"bet\", \"action_id\": \"f61c5eba-fb26-4070-89b5-c3a2edf54c02\", \"amount\": 100 },\n    { \"action\": \"bet\", \"action_id\": \"d94b2fa5-e87f-4d8e-9a01-4a443ed5c11c\", \"amount\": 50 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "I1. Rollback arrives before the bet (pre-rollback)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\",\n  \"game\": \"acceptance:test\",\n  \"game_id\": \"1761032915476894301\",\n  \"finished\": true,\n  \"actions\": [\n    {\n      \"action\": \"rollback\",\n      \"action_id\": \"65d57850-5ee3-418b-b1b0-b4975242efcf\",\n      \"original_action_id\": \"27710aca-60f9-4259-a9bb-26f75cd05917\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "I2. Later bet for the same action_id (should noop)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\",\n  \"game\": \"acceptance:test\",\n  \"game_id\": \"1761032915476894301\",\n  \"finished\": true,\n  \"actions\": [\n    { \"action\": \"bet\", \"action_id\": \"27710aca-60f9-4259-a9bb-26f75cd05917\", \"amount\": 100 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "J1. Two rollbacks before bet+win (pre-rollback x2)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\",\n  \"game\": \"acceptance:test\",\n  \"game_id\": \"1761032916227566632\",\n  \"finished\": true,\n  \"actions\": [\n    {\n      \"action\": \"rollback\",\n      \"action_id\": \"12af93e7-f208-46f1-9399-4c1668fdd675\",\n      \"original_action_id\": \"a2fd2ce9-5184-48b6-bdde-f6ba05d32e01\"\n    },\n    {\n      \"action\": \"rollback\",\n      \"action_id\": \"85762689-2ab3-40d6-a7cd-e3babb53ae06\",\n      \"original_action_id\": \"7e4ad25b-b2c2-4eb7-b38e-63e7ddcdab52\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "J2. Later bet+win (no net effect)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\",\n  \"game\": \"acceptance:test\",\n  \"game_id\": \"1761032916227566632\",\n  \"finished\": true,\n  \"actions\": [\n    { \"action\": \"bet\", \"action_id\": \"a2fd2ce9-5184-48b6-bdde-f6ba05d32e01\", \"amount\": 100 },\n    { \"action\": \"win\", \"action_id\": \"7e4ad25b-b2c2-4eb7-b38e-63e7ddcdab52\", \"amount\": 200 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "RTP reports",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Default both report endpoints to the current UTC day.",
+              "const day = new Date().toISOString().slice(0, 10);",
+              "pm.variables.set('reportFrom', day + 'T00:00:00Z');",
+              "pm.variables.set('reportTo', day + 'T23:59:59Z');"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "GET /report/users  (today)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/report/users?from={{reportFrom}}&to={{reportTo}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "report", "users"],
+              "query": [
+                { "key": "from", "value": "{{reportFrom}}" },
+                { "key": "to", "value": "{{reportTo}}" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /report/users  (paginated, limit=2)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/report/users?from={{reportFrom}}&to={{reportTo}}&limit=2",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "report", "users"],
+              "query": [
+                { "key": "from", "value": "{{reportFrom}}" },
+                { "key": "to", "value": "{{reportTo}}" },
+                { "key": "limit", "value": "2" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /report/casino  (today)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/report/casino?from={{reportFrom}}&to={{reportTo}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "report", "casino"],
+              "query": [
+                { "key": "from", "value": "{{reportFrom}}" },
+                { "key": "to", "value": "{{reportTo}}" }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "HMAC negative cases",
+      "item": [
+        {
+          "name": "Missing Authorization → 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Skip-Hmac", "value": "true" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Wrong scheme (Bearer) → 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Override-Hmac", "value": "Bearer 0000000000000000000000000000000000000000000000000000000000000000" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Right-length hex but wrong bytes → 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Override-Hmac", "value": "HMAC-SHA256 0000000000000000000000000000000000000000000000000000000000000000" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PDF section 3 HMAC vector (byte-exact)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              {
+                "key": "X-Override-Hmac",
+                "value": "HMAC-SHA256 7376e78d5f65ca750c9719d2163daffa129e8a07ba9a1abe12241b3b1de51295",
+                "description": "Pins the literal hex from the PDF — the body byte sequence below matters (note the spaces after each colon)."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"user_id\": \"8|USDT|USD\",\"currency\": \"USD\",\"game\": \"acceptance:test\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/aggregator/takehome/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["aggregator", "takehome", "process"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
