@@ -1,6 +1,6 @@
 import type { Kysely, Transaction } from 'kysely';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { makeKyselyMock, type KyselyMock } from '../../../test/helpers/kysely-mock';
+import { makeKyselyMock, type KyselyMock } from '../../test-utils/kysely-mock';
 import type { Database } from '../../db/types';
 import type { RequestContext } from '../action-context';
 import { CurrencyMismatchError } from '../errors';

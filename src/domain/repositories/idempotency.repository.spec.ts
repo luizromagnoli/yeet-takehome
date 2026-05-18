@@ -1,6 +1,6 @@
 import type { Transaction } from 'kysely';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeKyselyMock, type KyselyMock } from '../../../test/helpers/kysely-mock';
+import { makeKyselyMock, type KyselyMock } from '../../test-utils/kysely-mock';
 import type { Database } from '../../db/types';
 import { asActionId, asUserId } from '../values/ids';
 import { IdempotencyRepository } from './idempotency.repository';

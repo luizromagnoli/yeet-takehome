@@ -80,7 +80,7 @@ export function makeKyselyMock(): KyselyMock {
   const mock = {} as KyselyMock;
 
   for (const name of CHAIN_METHODS) {
-    (mock as Record<string, Mock>)[name] = vi.fn(() => mock);
+    (mock as unknown as Record<string, Mock>)[name] = vi.fn(() => mock);
   }
 
   // onConflict takes a builder callback `(oc) => oc.columns(...).doNothing()`.
@@ -110,7 +110,7 @@ export function makeKyselyMock(): KyselyMock {
 
   mock.$reset = () => {
     for (const name of [...CHAIN_METHODS, ...TERMINAL_METHODS] as const) {
-      (mock as Record<string, Mock>)[name].mockClear();
+      (mock as unknown as Record<string, Mock>)[name].mockClear();
     }
     mock.onConflict.mockClear();
     mock.doNothing.mockClear();
