@@ -101,6 +101,27 @@ automatically; the `baseUrl` and `secret` collection variables default to
 `http://localhost:3000` and `test`. Verified end-to-end via `newman run` —
 24/24 requests return the expected status codes.
 
+### AWS CDK infra (synth-only)
+
+`infra/` is a TypeScript CDK v2 app that materialises the production-shape
+stack described in the roadmap. Four granular stacks split by lifecycle:
+`Yeet-Network` (VPC + endpoints), `Yeet-Secrets` (HMAC), `Yeet-Data` (RDS),
+`Yeet-Service` (ECS Fargate + ALB). The reviewer can synth all four without
+an AWS account and without Docker:
+
+```sh
+cd infra
+npm install
+npx cdk synth -c useLocalAsset=false --quiet
+npx cdk ls -c useLocalAsset=false        # → Yeet-Network, Yeet-Secrets, Yeet-Data, Yeet-Service
+```
+
+The default image source is `ContainerImage.fromAsset` against the repo's
+Dockerfile (real-deploy fidelity, requires Docker at synth). The
+`useLocalAsset=false` context flag swaps to a public-registry placeholder so
+the synth runs anywhere. See `infra/README.md` for the cost note and the
+explicit scope cuts.
+
 ### Reset the database
 
 If you want to start clean:
@@ -485,11 +506,12 @@ so the simulation is deterministic regardless of worker interleaving.
 These were deliberately scoped out of v1 — each is a known follow-up with a
 clear migration path, not an oversight.
 
-- **AWS CDK infrastructure** — TypeScript CDK app provisioning the prod stack
-  (VPC, ECS Fargate service for the API, RDS for Postgres with parameter group
-  + automated backups, Secrets Manager for the HMAC secret, ALB with health
-  checks against `/health` and `/ready`, IAM roles, CloudWatch dashboards).
-  Demonstrates infra-as-code skill end to end. Tracked as the next pickup.
+- **AWS CDK infrastructure** — *shipped, synth-only.* See [`infra/`](./infra/)
+  for a four-stack CDK v2 app (`Yeet-Network`, `Yeet-Secrets`, `Yeet-Data`,
+  `Yeet-Service`) split by lifecycle. VPC with no NAT, RDS PostgreSQL,
+  Fargate task on ALB, Secrets Manager for the HMAC secret, CloudWatch log
+  retention. Deliberate cuts (TLS, Multi-AZ, autoscaling, dashboards/alarms,
+  CDK Pipelines) are listed in `infra/README.md` as clean next-PR pickups.
 - **GitHub Actions CI** — workflow that runs `docker compose up -d postgres`,
   `npm ci`, `npm run build`, `npm test` on every push, plus the game runner
   as a separate job. Surfaces the green checks directly on the PR.

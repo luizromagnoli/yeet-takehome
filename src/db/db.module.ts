@@ -1,7 +1,11 @@
 import { Global, Inject, Module, OnApplicationShutdown } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import type { Kysely } from 'kysely';
-import { createKysely, createPool, KYSELY } from './pool.provider';
+import {
+  createKysely,
+  createPool,
+  KYSELY,
+  resolveDatabaseUrl,
+} from './pool.provider';
 import type { Database } from './types';
 
 @Global()
@@ -9,10 +13,8 @@ import type { Database } from './types';
   providers: [
     {
       provide: KYSELY,
-      inject: [ConfigService],
-      useFactory: (config: ConfigService): Kysely<Database> => {
-        const databaseUrl = config.getOrThrow<string>('DATABASE_URL');
-        const pool = createPool({ databaseUrl });
+      useFactory: (): Kysely<Database> => {
+        const pool = createPool({ databaseUrl: resolveDatabaseUrl() });
         return createKysely(pool);
       },
     },

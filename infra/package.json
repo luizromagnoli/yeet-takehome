@@ -1,0 +1,23 @@
+{
+  "name": "yeet-infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AWS CDK MVP stacks for the Yeet Casino bet processor",
+  "scripts": {
+    "synth": "cdk synth",
+    "synth:no-docker": "cdk synth -c useLocalAsset=false",
+    "ls": "cdk ls",
+    "diff": "cdk diff",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.170.0",
+    "constructs": "^10.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "aws-cdk": "^2.170.0",
+    "tsx": "^4.22.0",
+    "typescript": "^5.7.2"
+  }
+}
