@@ -4,6 +4,8 @@
     "module": "commonjs",
     "moduleResolution": "node",
     "lib": ["ES2022"],
+    "types": ["node"],
+    "typeRoots": ["./node_modules/@types"],
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
