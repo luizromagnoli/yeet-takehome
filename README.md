@@ -26,9 +26,10 @@ npm install
 # 2. Start Postgres in the background
 docker compose up -d postgres
 
-# Wait for it to become healthy (~5 seconds):
-docker inspect --format '{{.State.Health.Status}}' yeet-postgres-1
-# rerun until it prints "healthy"
+# Wait for it to become healthy (~5 seconds). Use docker compose so the
+# container name follows your clone directory rather than hard-coding one:
+until docker compose exec -T postgres pg_isready -U yeet -d yeet >/dev/null 2>&1; do sleep 1; done
+echo "postgres healthy"
 
 # 3. Set env vars for the local CLIs (the API container reads them from compose)
 export DATABASE_URL=postgres://yeet:yeet@localhost:5432/yeet
