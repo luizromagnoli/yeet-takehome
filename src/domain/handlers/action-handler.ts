@@ -7,7 +7,6 @@ import type { Money } from '../values/money';
 
 export interface ApplyOutcome {
   delta: Money;
-  applied: boolean;
 }
 
 export interface ActionHandler {

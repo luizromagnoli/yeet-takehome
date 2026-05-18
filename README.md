@@ -394,6 +394,17 @@ instead of scanning `actions` itself. The `(day)` secondary index supports
 the casino-wide report. Per the spec, rolled-back amounts are excluded
 from `total_bet` / `total_win` and reported separately.
 
+### `round_closes` — idempotent round-completion markers
+
+`(user_id, game_id, day)` PK with a `closed_at` timestamp. Inserted once
+per closed round via `INSERT … ON CONFLICT DO NOTHING RETURNING` whenever
+a request arrives with `finished: true`. The boolean result gates the
+`rounds` counter bump in `user_daily_stats`, so the counter increments
+exactly once per round regardless of how the round's actions were
+distributed across requests or whether the closing request was a retry
+containing only duplicates. Without this table, a closing request whose
+actions all dedup would silently fail to count the round.
+
 ## Tests
 
 ```sh
@@ -436,9 +447,11 @@ so the simulation is deterministic regardless of worker interleaving.
   seeds it; mismatches on later requests are rejected.
 - Rollback of a rollback is treated as an idempotent no-op (rollback rows
   are not themselves rollback-able).
-- The `finished` flag is informational: when `true` and at least one action
-  was applied, the request increments `rounds` in `user_daily_stats` for the
-  day.
+- The `finished` flag is consumed: a request marked `finished: true` claims
+  a row in `round_closes` keyed on `(user_id, game_id, day)`. The first
+  successful claim bumps the `rounds` counter in `user_daily_stats`;
+  subsequent claims for the same round are no-ops. This keeps the counter
+  correct under retries and split-then-finished request sequences.
 - Report timestamps are server-side `created_at`. Sub-day precision is
   approximated by truncating the bounds to day boundaries (the rollup is
   per-day); production would extend the report to add a partial-day fallback

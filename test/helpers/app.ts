@@ -47,6 +47,7 @@ export async function resetDatabase(db: Kysely<Database>): Promise<void> {
       actions,
       action_idempotency,
       pending_rollbacks,
+      round_closes,
       user_daily_stats,
       user_balances,
       users

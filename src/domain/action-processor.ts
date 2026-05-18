@@ -7,6 +7,7 @@ import { HandlerRegistry } from './handlers/handler-registry';
 import { BalanceRepository } from './repositories/balance.repository';
 import { DailyStatsRepository } from './repositories/daily-stats.repository';
 import { IdempotencyRepository } from './repositories/idempotency.repository';
+import { RoundCloseRepository } from './repositories/round-close.repository';
 import { toDomainAction } from './values/action';
 import type { ActionId, TxId } from './values/ids';
 import type { Money } from './values/money';
@@ -28,6 +29,7 @@ export class ActionProcessor {
     private readonly balances: BalanceRepository,
     private readonly idempotency: IdempotencyRepository,
     private readonly dailyStats: DailyStatsRepository,
+    private readonly roundCloses: RoundCloseRepository,
     private readonly handlers: HandlerRegistry,
   ) {}
 
@@ -47,7 +49,6 @@ export class ActionProcessor {
     let runningBalance = await this.balances.lockBalance(trx, ctx.userId);
 
     const transactions: ProcessedTransaction[] = [];
-    let anyApplied = false;
 
     for (const action of actions) {
       const claim = await this.idempotency.claim(
@@ -65,15 +66,19 @@ export class ActionProcessor {
         .for(action.kind)
         .apply(trx, ctx, action, claim.txId, runningBalance);
       runningBalance = runningBalance.add(outcome.delta);
-      if (outcome.applied) {
-        anyApplied = true;
-      }
     }
 
     await this.balances.update(trx, ctx.userId, runningBalance);
 
-    if (ctx.finished && anyApplied) {
-      await this.dailyStats.bumpRound(trx, ctx);
+    // The round-close claim is keyed on (user, game_id, day), so it bumps
+    // the rounds counter exactly once per closed round — independently of
+    // how the round's actions were spread across requests or whether the
+    // closing request happened to contain only duplicates of earlier ones.
+    if (ctx.finished) {
+      const fresh = await this.roundCloses.claim(trx, ctx);
+      if (fresh) {
+        await this.dailyStats.bumpRound(trx, ctx);
+      }
     }
 
     return {

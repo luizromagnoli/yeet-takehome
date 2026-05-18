@@ -60,6 +60,13 @@ export interface UserDailyStatsTable {
   rolled_back_wins: Generated<bigint>;
 }
 
+export interface RoundClosesTable {
+  user_id: UserId;
+  game_id: GameId;
+  day: string;
+  closed_at: Generated<Date>;
+}
+
 export interface Database {
   users: UsersTable;
   user_balances: UserBalancesTable;
@@ -67,4 +74,5 @@ export interface Database {
   action_idempotency: ActionIdempotencyTable;
   pending_rollbacks: PendingRollbacksTable;
   user_daily_stats: UserDailyStatsTable;
+  round_closes: RoundClosesTable;
 }

@@ -9,6 +9,7 @@ import { DailyStatsRepository } from './repositories/daily-stats.repository';
 import { IdempotencyRepository } from './repositories/idempotency.repository';
 import { LedgerRepository } from './repositories/ledger.repository';
 import { PendingRollbackRepository } from './repositories/pending-rollback.repository';
+import { RoundCloseRepository } from './repositories/round-close.repository';
 
 @Module({
   providers: [
@@ -17,6 +18,7 @@ import { PendingRollbackRepository } from './repositories/pending-rollback.repos
     LedgerRepository,
     PendingRollbackRepository,
     DailyStatsRepository,
+    RoundCloseRepository,
     BetHandler,
     WinHandler,
     RollbackHandler,

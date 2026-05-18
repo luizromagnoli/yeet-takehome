@@ -39,7 +39,7 @@ export class RollbackHandler implements ActionHandler {
     if (!original) {
       await this.pendingRollback.insert(trx, ctx, action, txId);
       await this.ledger.insert(trx, ctx, action, txId, 'applied', zero);
-      return { delta: zero, applied: true };
+      return { delta: zero };
     }
 
     const originalRow = await this.ledger.find(trx, original);
@@ -48,7 +48,7 @@ export class RollbackHandler implements ActionHandler {
     // (it was a noop, or it has already been rolled back by another rollback).
     if (originalRow.status !== 'applied') {
       await this.ledger.insert(trx, ctx, action, txId, 'applied', zero);
-      return { delta: zero, applied: true };
+      return { delta: zero };
     }
 
     const reverseDelta = originalRow.balanceDelta.negate();

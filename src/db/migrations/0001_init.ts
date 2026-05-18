@@ -105,6 +105,21 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   await sql`
     CREATE INDEX user_daily_stats_day_idx ON user_daily_stats (day)
   `.execute(db);
+
+  // One row per closed round. The processor claims a row here whenever a
+  // request arrives with finished=true; the unique PK makes the claim a
+  // no-op on retries and split-then-finished sequences, so the rounds
+  // counter increments exactly once per (user, game_id, day) regardless
+  // of how the round's actions were split across requests.
+  await sql`
+    CREATE TABLE round_closes (
+      user_id text NOT NULL,
+      game_id text NOT NULL,
+      day date NOT NULL,
+      closed_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, game_id, day)
+    )
+  `.execute(db);
 }
 
 interface MonthBoundary {

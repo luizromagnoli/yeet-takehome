@@ -38,11 +38,11 @@ export class WinHandler implements ActionHandler {
         'noop',
         Money.zero(ctx.currency),
       );
-      return { delta: Money.zero(ctx.currency), applied: false };
+      return { delta: Money.zero(ctx.currency) };
     }
 
     await this.ledger.insert(trx, ctx, action, txId, 'applied', action.amount);
     await this.dailyStats.bumpWin(trx, ctx, action.amount);
-    return { delta: action.amount, applied: true };
+    return { delta: action.amount };
   }
 }

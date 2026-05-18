@@ -40,7 +40,7 @@ export class BetHandler implements ActionHandler {
         'noop',
         Money.zero(ctx.currency),
       );
-      return { delta: Money.zero(ctx.currency), applied: false };
+      return { delta: Money.zero(ctx.currency) };
     }
 
     if (runningBalance.isLessThan(action.amount)) {
@@ -49,6 +49,6 @@ export class BetHandler implements ActionHandler {
     const delta = action.amount.negate();
     await this.ledger.insert(trx, ctx, action, txId, 'applied', delta);
     await this.dailyStats.bumpBet(trx, ctx, action.amount);
-    return { delta, applied: true };
+    return { delta };
   }
 }
