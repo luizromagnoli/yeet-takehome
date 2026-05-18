@@ -43,7 +43,7 @@ npm run migrate
 #    dev/app data. The test runner re-applies migrations and truncates
 #    between cases automatically.
 npm run build
-npm test           # 26 tests across acceptance / concurrency / HMAC / reporting
+npm test           # 173 tests: 147 co-located unit + 26 integration
 
 # 6. Seed 1000 users in the app DB. The acceptance user 8|USDT|USD is
 #    always seeded at balance 74322001 so the PDF scenarios work against a
@@ -411,7 +411,10 @@ actions all dedup would silently fail to count the round.
 npm test
 ```
 
-Vitest + Fastify's in-process injector against a real Postgres. Covers:
+Vitest + Fastify's in-process injector against a real Postgres for the
+integration suite, plus per-class unit specs co-located with the source.
+
+**Integration tests** (`test/`):
 - All PDF acceptance scenarios A–J, plus both fixed HMAC vectors from
   section 3 and section 8 (spaced and compact body serializations).
 - Concurrency: 50 parallel same-action requests, exactly-once application,
@@ -422,6 +425,12 @@ Vitest + Fastify's in-process injector against a real Postgres. Covers:
   stable.
 - Round-close idempotency: split-then-finished sequences and finished
   retries both count the round exactly once.
+
+**Unit tests** (`src/**/*.spec.ts`):
+- Every domain handler, repository, processor, service, controller, guard,
+  and cron, mocked at their direct dependencies. Repositories use a shared
+  chainable Kysely mock helper (`test/helpers/kysely-mock.ts`) that asserts
+  both the called and not-called branches of the query builder.
 
 The acceptance suite TRUNCATEs the dev database between tests. Run a
 dedicated test database if you want isolation from local development data.

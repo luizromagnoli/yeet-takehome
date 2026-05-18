@@ -9,3 +9,10 @@ process.env.BET_PROCESSOR_HMAC_SECRET =
 // Silence Nest's startup logs during tests; failures still surface via thrown
 // exceptions and supertest assertions.
 process.env.NEST_DISABLE_LOGS = '1';
+
+// Disable Nest's Logger globally for the test run. Unit tests instantiate
+// controllers and services directly (no NestFactory.create), so the env var
+// alone is not enough — we have to call overrideLogger to mute the per-class
+// `new Logger(name)` instances.
+import { Logger } from '@nestjs/common';
+Logger.overrideLogger(false);
