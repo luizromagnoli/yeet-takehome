@@ -44,7 +44,7 @@ npm run migrate
 #    dev/app data. The test runner re-applies migrations and truncates
 #    between cases automatically.
 npm run build
-npm test           # 173 tests: 147 co-located unit + 26 integration
+npm test           # 178 tests: 152 co-located unit + 26 integration
 
 # 6. Seed 1000 users in the app DB. The acceptance user 8|USDT|USD is
 #    always seeded at balance 74322001 so the PDF scenarios work against a
