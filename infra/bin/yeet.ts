@@ -15,12 +15,17 @@ const env = {
 
 const network = new NetworkStack(app, 'Yeet-Network', { env });
 const secrets = new SecretsStack(app, 'Yeet-Secrets', { env });
-const data = new DataStack(app, 'Yeet-Data', { env, vpc: network.vpc });
+const data = new DataStack(app, 'Yeet-Data', {
+  env,
+  vpc: network.vpc,
+  credentialsSecret: secrets.dbCredentialsSecret,
+});
 const service = new ServiceStack(app, 'Yeet-Service', {
   env,
   vpc: network.vpc,
   dbInstance: data.dbInstance,
   hmacSecret: secrets.hmacSecret,
+  dbCredentialsSecret: secrets.dbCredentialsSecret,
 });
 
 // Explicit dependency edges. CDK already infers most of these from the
@@ -28,6 +33,7 @@ const service = new ServiceStack(app, 'Yeet-Service', {
 // ordering robust against future refactors that might temporarily drop a
 // reference.
 data.addDependency(network);
+data.addDependency(secrets);
 service.addDependency(network);
 service.addDependency(data);
 service.addDependency(secrets);

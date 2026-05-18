@@ -13,12 +13,26 @@ only re-publishes `Yeet-Service`; data and secrets never move.
 | Stack | Owns | Lifecycle | Deps |
 |---|---|---|---|
 | `Yeet-Network` | VPC, subnets, interface + gateway VPC endpoints | Foundational; rarely changes | None |
-| `Yeet-Secrets` | HMAC Secrets Manager secret | Independent of compute and data | None |
-| `Yeet-Data`    | RDS PostgreSQL 16 (`db.t4g.micro`), DB security group, RDS-managed credential secret | Persistent; tear-down loses data | `Yeet-Network` |
+| `Yeet-Secrets` | HMAC secret + DB master credentials secret (both CDK-named — no fixed `secretName`) | Independent of compute and data; secrets outlive any single DB/service teardown | None |
+| `Yeet-Data`    | RDS PostgreSQL 16 (`db.t4g.micro`), DB security group | Persistent; tear-down loses data | `Yeet-Network`, `Yeet-Secrets` |
 | `Yeet-Service` | ECS Fargate cluster + task/service, ALB + listener + target group, CloudWatch log group, IAM roles | Volatile; every app deploy lands here | `Yeet-Network`, `Yeet-Data`, `Yeet-Secrets` |
 
 Cross-stack references are CFN exports/imports — `Yeet-Service`'s template
-carries 14 `Fn::ImportValue` calls reaching into the other three stacks.
+carries 14 `Fn::ImportValue` calls reaching into the other three stacks;
+`Yeet-Data` carries 5 (VPC, subnets, and the DB credentials secret ARN).
+
+> **Note on DB credentials.** The master username + password live in a
+> JSON-shaped secret in `Yeet-Secrets`, *not* in the RDS-managed secret
+> that `Credentials.fromGeneratedSecret` produces by default. The
+> `DatabaseInstance` is configured with `Credentials.fromPassword(...)` so
+> CDK skips the `SecretTargetAttachment` it would otherwise create —
+> that attachment would live in `Yeet-Secrets` and reference back to the
+> DB in `Yeet-Data`, forming a `Yeet-Secrets → Yeet-Data → Yeet-Secrets`
+> cycle against the existing `Yeet-Data → Yeet-Secrets` edge that exists
+> because DataStack consumes the secret. Skipping the attachment also
+> means automatic rotation isn't wired up — out of MVP scope; for prod,
+> route rotation through an RDS Proxy or a one-shot Lambda rotation
+> function.
 
 ## Run
 
@@ -55,8 +69,8 @@ npx tsc --noEmit
 | `DB_HOST` | RDS endpoint address (plain env) | `Yeet-Data` exports it |
 | `DB_PORT` | RDS endpoint port (plain env) | `Yeet-Data` exports it |
 | `DB_NAME` | `yeet` (plain env) | hard-coded in `ServiceStack` |
-| `DB_USER` | `username` field of the RDS-managed secret | injected via `ecs.Secret.fromSecretsManager` |
-| `DB_PASSWORD` | `password` field of the RDS-managed secret | injected via `ecs.Secret.fromSecretsManager` |
+| `DB_USER` | `username` field of the `Yeet-Secrets` DB credentials secret | injected via `ecs.Secret.fromSecretsManager` |
+| `DB_PASSWORD` | `password` field of the `Yeet-Secrets` DB credentials secret | injected via `ecs.Secret.fromSecretsManager` |
 | `BET_PROCESSOR_HMAC_SECRET` | whole-string `Yeet-Secrets` secret | injected via `ecs.Secret.fromSecretsManager` |
 | `PORT` | `'3000'` | hard-coded |
 | `MIGRATE_ON_BOOT` | `'true'` | runs migrations at first container boot |

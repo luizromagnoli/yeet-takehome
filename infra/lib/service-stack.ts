@@ -18,6 +18,8 @@ export interface ServiceStackProps extends StackProps {
   readonly vpc: ec2.IVpc;
   readonly dbInstance: rds.DatabaseInstance;
   readonly hmacSecret: secretsmanager.ISecret;
+  /** Username + password secret created in SecretsStack and attached to RDS in DataStack. */
+  readonly dbCredentialsSecret: secretsmanager.ISecret;
 }
 
 /**
@@ -74,12 +76,17 @@ export class ServiceStack extends Stack {
         BET_PROCESSOR_HMAC_SECRET: ecs.Secret.fromSecretsManager(
           props.hmacSecret,
         ),
+        // DB credentials are read from the SecretsStack-owned secret, not
+        // from `dbInstance.secret`. Same underlying secret because DataStack
+        // wired it as `rds.Credentials.fromSecret(...)`, but referencing it
+        // through SecretsStack makes the ownership boundary explicit and
+        // avoids a stray Yeet-Service → Yeet-Data import for the secret ARN.
         DB_USER: ecs.Secret.fromSecretsManager(
-          props.dbInstance.secret!,
+          props.dbCredentialsSecret,
           'username',
         ),
         DB_PASSWORD: ecs.Secret.fromSecretsManager(
-          props.dbInstance.secret!,
+          props.dbCredentialsSecret,
           'password',
         ),
       },
