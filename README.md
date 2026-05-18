@@ -43,7 +43,7 @@ npm run migrate
 #    dev/app data. The test runner re-applies migrations and truncates
 #    between cases automatically.
 npm run build
-npm test           # 23 tests across acceptance / concurrency / HMAC / reporting
+npm test           # 26 tests across acceptance / concurrency / HMAC / reporting
 
 # 6. Seed 1000 users in the app DB. The acceptance user 8|USDT|USD is
 #    always seeded at balance 74322001 so the PDF scenarios work against a
@@ -412,13 +412,16 @@ npm test
 ```
 
 Vitest + Fastify's in-process injector against a real Postgres. Covers:
-- All PDF acceptance scenarios A–J, including the fixed HMAC vector.
+- All PDF acceptance scenarios A–J, plus both fixed HMAC vectors from
+  section 3 and section 8 (spaced and compact body serializations).
 - Concurrency: 50 parallel same-action requests, exactly-once application,
   serialized balance updates that never go negative.
 - HMAC negative cases (missing, wrong scheme, wrong length, non-hex).
 - Reporting accuracy: totals match a known activity stream; rolled-back
   amounts move out of `total_bet` / `total_win`; keyset pagination is
   stable.
+- Round-close idempotency: split-then-finished sequences and finished
+  retries both count the round exactly once.
 
 The acceptance suite TRUNCATEs the dev database between tests. Run a
 dedicated test database if you want isolation from local development data.

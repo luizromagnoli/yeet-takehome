@@ -343,10 +343,30 @@ describe('Scenario J — rollback before bet+win, then bet+win arrive', () => {
 });
 
 describe('PDF HMAC vector', () => {
-  it('verifies the example signature byte-for-byte', async () => {
+  it('verifies the section 3 example signature byte-for-byte', async () => {
     const rawBody = '{"user_id": "8|USDT|USD","currency": "USD","game": "acceptance:test"}';
     const expectedSig =
       '7376e78d5f65ca750c9719d2163daffa129e8a07ba9a1abe12241b3b1de51295';
+    const res = await app.getHttpAdapter().getInstance().inject({
+      method: 'POST',
+      url: '/aggregator/takehome/process',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `HMAC-SHA256 ${expectedSig}`,
+      },
+      payload: rawBody,
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('verifies the section 8 quick-reference signature byte-for-byte', async () => {
+    // Same secret and logical payload as section 3, but the raw bytes use
+    // the compact (no-space) JSON serialization — which is a different byte
+    // sequence and therefore a different HMAC digest. Pinning both vectors
+    // proves we verify against raw bytes rather than a normalised form.
+    const rawBody = '{"user_id":"8|USDT|USD","currency":"USD","game":"acceptance:test"}';
+    const expectedSig =
+      '442c4cd8926008096225416b21f5a1862fbf4fc4e5224362e3b463e85a39f40a';
     const res = await app.getHttpAdapter().getInstance().inject({
       method: 'POST',
       url: '/aggregator/takehome/process',
